@@ -36,7 +36,8 @@ export const useChat = (appSettings: AppSettings, setAppSettings: React.Dispatch
         isSwitchingModel, setIsSwitchingModel,
         userScrolledUp,
         activeChat, messages, currentChatSettings, isLoading,
-        setCurrentChatSettings, updateAndPersistSessions, updateAndPersistGroups
+        setCurrentChatSettings, updateAndPersistSessions, updateAndPersistGroups,
+        fileDraftsRef
     } = chatState;
 
     // 2. Chat Client Initialization
@@ -51,13 +52,13 @@ export const useChat = (appSettings: AppSettings, setAppSettings: React.Dispatch
     });
 
     // 3. Feature Hooks
-    const { apiModels, isModelsLoading, modelsLoadingError } = useModels(appSettings);
+    const { apiModels, isModelsLoading, modelsLoadingError, setApiModels } = useModels(appSettings);
     
     const historyHandler = useChatHistory({ 
         appSettings, setSavedSessions, setSavedGroups, setActiveSessionId, 
         setEditingMessageId, setCommandedInput, setSelectedFiles, activeJobs, 
         updateAndPersistSessions, activeChat, language, updateAndPersistGroups,
-        userScrolledUp
+        userScrolledUp, selectedFiles, fileDraftsRef, activeSessionId
     });
     
     const fileHandler = useFileHandling({ 
@@ -203,6 +204,7 @@ export const useChat = (appSettings: AppSettings, setAppSettings: React.Dispatch
         savedGroups,
         activeSessionId,
         apiModels,
+        setApiModels,
         isModelsLoading,
         modelsLoadingError,
         isSwitchingModel,

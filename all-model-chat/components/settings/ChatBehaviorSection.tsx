@@ -22,8 +22,6 @@ interface ChatBehaviorSectionProps {
   setTemperature: (value: number) => void;
   topP: number;
   setTopP: (value: number) => void;
-  isTranscriptionThinkingEnabled: boolean;
-  setIsTranscriptionThinkingEnabled: (value: boolean) => void;
   thinkingBudget: number;
   setThinkingBudget: (value: number) => void;
   thinkingLevel?: 'LOW' | 'HIGH';
@@ -33,6 +31,7 @@ interface ChatBehaviorSectionProps {
   safetySettings?: SafetySetting[];
   setSafetySettings: (settings: SafetySetting[]) => void;
   t: (key: string) => string;
+  setAvailableModels: (models: ModelOption[]) => void;
 }
 
 export const ChatBehaviorSection: React.FC<ChatBehaviorSectionProps> = (props) => {
@@ -46,10 +45,9 @@ export const ChatBehaviorSection: React.FC<ChatBehaviorSectionProps> = (props) =
             isModelsLoading={props.isModelsLoading}
             modelsLoadingError={props.modelsLoadingError}
             availableModels={props.availableModels}
+            setAvailableModels={props.setAvailableModels}
             transcriptionModelId={props.transcriptionModelId}
             setTranscriptionModelId={props.setTranscriptionModelId}
-            isTranscriptionThinkingEnabled={props.isTranscriptionThinkingEnabled}
-            setIsTranscriptionThinkingEnabled={props.setIsTranscriptionThinkingEnabled}
             generateQuadImages={props.generateQuadImages}
             setGenerateQuadImages={props.setGenerateQuadImages}
             ttsVoice={props.ttsVoice}
