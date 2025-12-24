@@ -1,9 +1,8 @@
-
-import { useCallback, Dispatch, SetStateAction } from 'react';
-import { ChatMessage, UploadedFile, SavedChatSession } from '../types';
+import React, { useCallback, Dispatch, SetStateAction } from 'react';
+import { ChatMessage, UploadedFile, SavedChatSession, InputCommand } from '../types';
 import { logService } from '../utils/appUtils';
 
-type CommandedInputSetter = Dispatch<SetStateAction<{ text: string; id: number; } | null>>;
+type CommandedInputSetter = Dispatch<SetStateAction<InputCommand | null>>;
 type SessionsUpdater = (updater: (prev: SavedChatSession[]) => SavedChatSession[]) => void;
 type SendMessageFunc = (overrideOptions?: { text?: string; files?: UploadedFile[]; editingId?: string }) => Promise<void>;
 

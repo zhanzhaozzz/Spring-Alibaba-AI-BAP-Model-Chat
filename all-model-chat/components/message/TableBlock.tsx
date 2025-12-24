@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Maximize2, Minimize2, Download } from 'lucide-react';
@@ -18,7 +17,7 @@ export const TableBlock: React.FC<React.TableHTMLAttributes<HTMLTableElement>> =
         const csvContent = rows.map(row => {
             const cells = Array.from(row.querySelectorAll('th, td'));
             return cells.map(cell => {
-                const text = cell.innerText || '';
+                const text = (cell as HTMLElement).innerText || '';
                 // Escape double quotes by doubling them
                 return `"${text.replace(/"/g, '""')}"`;
             }).join(',');

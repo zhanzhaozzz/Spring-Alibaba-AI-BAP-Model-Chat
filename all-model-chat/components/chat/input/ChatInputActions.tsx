@@ -19,6 +19,7 @@ export const ChatInputActions: React.FC<ChatInputActionsProps> = ({
   isDeepSearchEnabled,
   onToggleDeepSearch,
   onAddYouTubeVideo,
+  onCountTokens,
   onRecordButtonClick,
   isRecording,
   isMicInitializing,
@@ -37,12 +38,12 @@ export const ChatInputActions: React.FC<ChatInputActionsProps> = ({
   onToggleFullscreen,
   isFullscreen,
 }) => {
-  const micIconSize = 18;
-  const sendIconSize = 18;
+  const micIconSize = 20;
+  const sendIconSize = 20;
 
   return (
     <div className="flex items-center justify-between w-full">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
             <AttachmentMenu onAction={onAttachmentAction} disabled={disabled} t={t as any} />
             <ToolsMenu
                 isGoogleSearchEnabled={isGoogleSearchEnabled}
@@ -54,12 +55,13 @@ export const ChatInputActions: React.FC<ChatInputActionsProps> = ({
                 isDeepSearchEnabled={isDeepSearchEnabled}
                 onToggleDeepSearch={onToggleDeepSearch}
                 onAddYouTubeVideo={onAddYouTubeVideo}
+                onCountTokens={onCountTokens}
                 disabled={disabled}
                 t={t as any}
             />
         </div>
 
-        <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
+        <div className="flex flex-shrink-0 items-center gap-2 sm:gap-3">
             {isRecording && (
                 <button
                     type="button"

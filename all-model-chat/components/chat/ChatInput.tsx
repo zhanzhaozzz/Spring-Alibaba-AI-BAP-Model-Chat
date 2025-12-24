@@ -1,7 +1,8 @@
 
+
 import React, { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { UploadedFile, AppSettings, ModelOption, ChatSettings as IndividualChatSettings } from '../../types';
+import { UploadedFile, AppSettings, ModelOption, ChatSettings as IndividualChatSettings, InputCommand } from '../../types';
 import { translations } from '../../utils/appUtils';
 import { ChatInputModals } from './input/ChatInputModals';
 import { ChatInputArea } from './input/ChatInputArea';
@@ -11,17 +12,18 @@ import { useSlashCommands } from '../../hooks/useSlashCommands';
 import { useIsDesktop } from '../../hooks/useDevice';
 import { useWindowContext } from '../../contexts/WindowContext';
 import { useChatInputState, INITIAL_TEXTAREA_HEIGHT_PX } from '../../hooks/useChatInputState';
-import { VideoSettingsModal } from '../modals/VideoSettingsModal';
+import { FileConfigurationModal } from '../modals/FileConfigurationModal';
 import { FilePreviewModal } from '../shared/ImageZoomModal';
-import { ThemeColors } from '../../constants/themeConstants';
 import { useChatInputHandlers } from '../../hooks/useChatInputHandlers';
+import { TokenCountModal } from '../modals/TokenCountModal';
+import { isGemini3Model } from '../../utils/appUtils';
 
 export interface ChatInputProps {
   appSettings: AppSettings;
   currentChatSettings: IndividualChatSettings;
   setAppFileError: (error: string | null) => void;
   activeSessionId: string | null;
-  commandedInput: { text: string; id: number } | null;
+  commandedInput: InputCommand | null;
   onMessageSent: () => void;
   selectedFiles: UploadedFile[]; 
   setSelectedFiles: (files: UploadedFile[] | ((prevFiles: UploadedFile[]) => UploadedFile[])) => void; 
@@ -63,10 +65,12 @@ export interface ChatInputProps {
   onTogglePip: () => void;
   isPipActive?: boolean;
   isHistorySidebarOpen?: boolean;
-  onSetDefaultModel: (modelId: string) => void;
   generateQuadImages: boolean;
   onToggleQuadImages: () => void;
   setCurrentChatSettings: (updater: (prevSettings: IndividualChatSettings) => IndividualChatSettings) => void;
+  onSuggestionClick?: (suggestion: string) => void;
+  onOrganizeInfoClick?: (suggestion: string) => void;
+  showEmptyStateSuggestions?: boolean;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = (props) => {
@@ -80,12 +84,14 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
     isUrlContextEnabled, onToggleUrlContext,
     isDeepSearchEnabled, onToggleDeepSearch,
     onClearChat, onNewChat, onOpenSettings, onToggleCanvasPrompt, onTogglePinCurrentSession, onTogglePip,
-    onRetryLastTurn, onSelectModel, availableModels, onEditLastUserMessage, isPipActive, isHistorySidebarOpen, onSetDefaultModel,
-    generateQuadImages, onToggleQuadImages, setCurrentChatSettings
+    onRetryLastTurn, onSelectModel, availableModels, onEditLastUserMessage, isPipActive, isHistorySidebarOpen,
+    generateQuadImages, onToggleQuadImages, setCurrentChatSettings,
+    onSuggestionClick, onOrganizeInfoClick, showEmptyStateSuggestions
   } = props;
 
   const {
     inputText, setInputText,
+    quoteText, setQuoteText,
     isTranslating, setIsTranslating,
     isAnimatingSend, setIsAnimatingSend,
     fileIdInput, setFileIdInput,
@@ -110,12 +116,13 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
   const [configuringFile, setConfiguringFile] = useState<UploadedFile | null>(null);
   const [previewFile, setPreviewFile] = useState<UploadedFile | null>(null);
   const [isConverting, setIsConverting] = useState(false);
+  const [showTokenModal, setShowTokenModal] = useState(false);
 
   const {
-    showCamera, showRecorder, showCreateTextFileEditor, showAddByIdInput, showAddByUrlInput, isHelpModalOpen,
-    fileInputRef, imageInputRef, folderInputRef, zipInputRef,
-    handleAttachmentAction, handleConfirmCreateTextFile, handlePhotoCapture, handleAudioRecord,
-    setIsHelpModalOpen, setShowAddByIdInput, setShowCamera, setShowRecorder, setShowCreateTextFileEditor, setShowAddByUrlInput,
+    showRecorder, showCreateTextFileEditor, showAddByIdInput, showAddByUrlInput, isHelpModalOpen,
+    fileInputRef, imageInputRef, folderInputRef, zipInputRef, cameraInputRef,
+    handleAttachmentAction, handleConfirmCreateTextFile, handleAudioRecord,
+    setIsHelpModalOpen, setShowAddByIdInput, setShowRecorder, setShowCreateTextFileEditor, setShowAddByUrlInput,
   } = useChatInputModals({
     onProcessFiles: (files) => onProcessFiles(files),
     justInitiatedFileOpRef,
@@ -128,6 +135,7 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
     onTranscribeAudio,
     setInputText,
     adjustTextareaHeight,
+    isAudioCompressionEnabled: appSettings.isAudioCompressionEnabled,
   });
 
   const {
@@ -137,24 +145,26 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
     t, onToggleGoogleSearch, onToggleDeepSearch, onToggleCodeExecution, onToggleUrlContext, onClearChat, onNewChat, onOpenSettings,
     onToggleCanvasPrompt, onTogglePinCurrentSession, onRetryLastTurn, onStopGenerating, onAttachmentAction: handleAttachmentAction,
     availableModels, onSelectModel, onMessageSent, setIsHelpModalOpen, textareaRef, onEditLastUserMessage, setInputText,
-    onTogglePip, onSetDefaultModel, currentModelId: currentChatSettings.modelId,
+    onTogglePip, currentModelId: currentChatSettings.modelId,
+    onSetThinkingLevel: (level) => setCurrentChatSettings(prev => ({ ...prev, thinkingLevel: level })),
+    thinkingLevel: currentChatSettings.thinkingLevel,
   });
 
-  const isModalOpen = showCreateTextFileEditor || showCamera || showRecorder || !!configuringFile || !!previewFile;
+  const isModalOpen = showCreateTextFileEditor || showRecorder || !!configuringFile || !!previewFile || showTokenModal;
   const isAnyModalOpen = isModalOpen || isHelpModalOpen;
   
   const canSend = (
-    (inputText.trim() !== '' || selectedFiles.length > 0)
+    (inputText.trim() !== '' || selectedFiles.length > 0 || quoteText.trim() !== '')
     && !isLoading && !isAddingById && !isModalOpen && !isConverting
   );
 
   const handlers = useChatInputHandlers({
-    inputText, setInputText, fileIdInput, setFileIdInput, urlInput, setUrlInput,
+    inputText, setInputText, quoteText, setQuoteText, fileIdInput, setFileIdInput, urlInput, setUrlInput,
     selectedFiles, setSelectedFiles, previewFile, setPreviewFile,
     isAddingById, setIsAddingById, isAddingByUrl, setIsAddingByUrl,
     isTranslating, setIsTranslating, isConverting, setIsConverting,
     isLoading, isFullscreen, setIsFullscreen, setIsAnimatingSend, setIsWaitingForUpload,
-    showCreateTextFileEditor, showCamera, showRecorder, setShowAddByUrlInput, setShowAddByIdInput,
+    showCreateTextFileEditor, showCamera: false, showRecorder, setShowAddByUrlInput, setShowAddByIdInput,
     textareaRef, fileInputRef, imageInputRef, folderInputRef, zipInputRef,
     justInitiatedFileOpRef, isComposingRef,
     appSettings, currentChatSettings, setCurrentChatSettings, setAppFileError,
@@ -166,17 +176,23 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
   
   useEffect(() => {
     if (commandedInput) {
-      setInputText(commandedInput.text);
-      if (commandedInput.text) {
-        setTimeout(() => {
-          const textarea = textareaRef.current;
-          if (textarea) {
-            textarea.focus();
-            const textLength = textarea.value.length;
-            textarea.setSelectionRange(textLength, textLength);
-          }
-        }, 0);
+      if (commandedInput.mode === 'quote') {
+          setQuoteText(commandedInput.text);
+      } else if (commandedInput.mode === 'append') {
+          setInputText(prev => prev + (prev ? '\n' : '') + commandedInput.text);
+      } else {
+          setInputText(commandedInput.text);
       }
+      
+      // Focus regardless of mode
+      setTimeout(() => {
+        const textarea = textareaRef.current;
+        if (textarea) {
+          textarea.focus();
+          const textLength = textarea.value.length;
+          textarea.setSelectionRange(textLength, textLength);
+        }
+      }, 0);
     }
   }, [commandedInput]);
 
@@ -193,8 +209,16 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
         const filesAreStillProcessing = selectedFiles.some(f => f.isProcessing);
         if (!filesAreStillProcessing) {
             clearCurrentDraft();
-            onSendMessage(inputText);
+            
+            let textToSend = inputText;
+            if (quoteText) {
+                const formattedQuote = quoteText.split('\n').map(l => `> ${l}`).join('\n');
+                textToSend = `${formattedQuote}\n\n${inputText}`;
+            }
+
+            onSendMessage(textToSend);
             setInputText('');
+            setQuoteText('');
             onMessageSent();
             setIsWaitingForUpload(false);
             setIsAnimatingSend(true);
@@ -204,9 +228,31 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
             }
         }
     }
-  }, [isWaitingForUpload, selectedFiles, onSendMessage, inputText, onMessageSent, clearCurrentDraft, isFullscreen]);
+  }, [isWaitingForUpload, selectedFiles, onSendMessage, inputText, quoteText, onMessageSent, clearCurrentDraft, isFullscreen]);
 
   const isGemini3ImageModel = currentChatSettings.modelId === 'gemini-3-pro-image-preview';
+  const isFlashImageModel = currentChatSettings.modelId.includes('gemini-2.5-flash-image');
+  const isRealImagen = currentChatSettings.modelId.includes('imagen');
+  
+  // Calculate if active model is a Gemini 3 model (for chat or image)
+  // Used to enable per-file resolution settings
+  const isGemini3 = isGemini3Model(currentChatSettings.modelId);
+
+  let supportedAspectRatios: string[] | undefined;
+  
+  if (isRealImagen) {
+      supportedAspectRatios = ['1:1', '16:9', '9:16', '4:3', '3:4'];
+  } else if (isGemini3ImageModel || isFlashImageModel) {
+      supportedAspectRatios = ['Auto', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '4:5', '5:4', '21:9'];
+  }
+
+  let supportedImageSizes: string[] | undefined;
+  if (isGemini3ImageModel) {
+      supportedImageSizes = ['1K', '2K', '4K'];
+  } else if (isRealImagen && !currentChatSettings.modelId.includes('fast')) {
+      // Standard and Ultra support 1K and 2K
+      supportedImageSizes = ['1K', '2K'];
+  }
 
   const chatInputContent = (
       <ChatInputArea 
@@ -234,6 +280,8 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
             t,
             generateQuadImages,
             onToggleQuadImages,
+            supportedAspectRatios,
+            supportedImageSizes,
         }}
         actionsProps={{
             onAttachmentAction: handleAttachmentAction,
@@ -247,6 +295,7 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
             isDeepSearchEnabled,
             onToggleDeepSearch: () => handlers.handleToggleToolAndFocus(onToggleDeepSearch),
             onAddYouTubeVideo: () => { setShowAddByUrlInput(true); textareaRef.current?.focus(); },
+            onCountTokens: () => setShowTokenModal(true),
             onRecordButtonClick: handleVoiceInputClick,
             onCancelRecording: handleCancelRecording,
             isRecording,
@@ -277,6 +326,7 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
             onCancelUpload,
             onConfigure: setConfiguringFile,
             onPreview: setPreviewFile,
+            isGemini3,
         }}
         inputProps={{
             value: inputText,
@@ -289,6 +339,10 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
             onCompositionStart: () => isComposingRef.current = true,
             onCompositionEnd: () => isComposingRef.current = false,
             onFocus: adjustTextareaHeight,
+        }}
+        quoteProps={{
+            quoteText,
+            onClearQuote: () => setQuoteText('')
         }}
         layoutProps={{
             isFullscreen,
@@ -303,6 +357,7 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
             imageInputRef,
             folderInputRef,
             zipInputRef,
+            cameraInputRef,
             handleFileChange: handlers.handleFileChange,
             handleFolderChange: handlers.handleFolderChange,
             handleZipChange: handlers.handleZipChange,
@@ -310,6 +365,11 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
         formProps={{
             onSubmit: handlers.handleSubmit,
         }}
+        suggestionsProps={showEmptyStateSuggestions && onSuggestionClick && onOrganizeInfoClick ? {
+            show: showEmptyStateSuggestions,
+            onSuggestionClick,
+            onOrganizeInfoClick
+        } : undefined}
         t={t}
       />
   );
@@ -317,9 +377,6 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
   return (
     <>
       <ChatInputModals
-        showCamera={showCamera}
-        onPhotoCapture={handlePhotoCapture}
-        onCameraCancel={() => { setShowCamera(false); textareaRef.current?.focus(); }}
         showRecorder={showRecorder}
         onAudioRecord={handleAudioRecord}
         onRecorderCancel={() => { setShowRecorder(false); textareaRef.current?.focus(); }}
@@ -332,21 +389,31 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
         isProcessingFile={isProcessingFile}
         isLoading={isLoading}
         t={t}
-        isHistorySidebarOpen={isHistorySidebarOpen}
       />
       
-      <VideoSettingsModal 
+      <FileConfigurationModal 
         isOpen={!!configuringFile} 
         onClose={() => setConfiguringFile(null)} 
         file={configuringFile}
-        onSave={handlers.handleSaveVideoMetadata}
+        onSave={handlers.handleSaveFileConfig}
+        t={t}
+        isGemini3={isGemini3}
+      />
+
+      <TokenCountModal
+        isOpen={showTokenModal}
+        onClose={() => setShowTokenModal(false)}
+        initialText={inputText}
+        initialFiles={selectedFiles}
+        appSettings={appSettings}
+        availableModels={availableModels}
+        currentModelId={currentChatSettings.modelId}
         t={t}
       />
 
       <FilePreviewModal
         file={previewFile}
         onClose={() => setPreviewFile(null)}
-        themeColors={{} as ThemeColors}
         t={t}
         onPrev={handlers.handlePrevImage}
         onNext={handlers.handleNextImage}

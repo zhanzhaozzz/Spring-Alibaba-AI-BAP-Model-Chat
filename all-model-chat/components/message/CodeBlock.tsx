@@ -1,11 +1,12 @@
 
 import React, { useState, useRef, useLayoutEffect, useEffect, useCallback } from 'react';
-import { Check, Copy, Maximize2, ChevronDown, ChevronUp, Download, Expand } from 'lucide-react';
+import { Check, Copy, Maximize2, ChevronDown, ChevronUp, Download, Expand, Sidebar } from 'lucide-react';
 import { translations } from '../../utils/appUtils';
 import { triggerDownload } from '../../utils/exportUtils';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { MESSAGE_BLOCK_BUTTON_CLASS } from '../../constants/appConstants';
 import { extractTextFromNode } from '../../utils/uiUtils';
+import { SideViewContent } from '../../types';
 
 const isLikelyHtml = (textContent: string): boolean => {
   if (!textContent) return false;
@@ -13,12 +14,174 @@ const isLikelyHtml = (textContent: string): boolean => {
   return s.startsWith('<!doctype html>') || (s.includes('<html') && s.includes('</html>')) || (s.startsWith('<svg') && s.includes('</svg>'));
 };
 
+const isLikelyReact = (textContent: string, language: string): boolean => {
+    const lang = language.toLowerCase();
+    if (['jsx', 'tsx'].includes(lang)) return true;
+    
+    // For JS/TS, check for React signatures
+    if (['js', 'javascript', 'ts', 'typescript'].includes(lang)) {
+        return (
+            (textContent.includes('import React') || textContent.includes('from "react"') || textContent.includes("from 'react'")) &&
+            (textContent.includes('export default') || textContent.includes('return (') || textContent.includes('className='))
+        );
+    }
+    return false;
+};
+
+const generateReactPreview = (code: string): string => {
+    // Basic transformation to make the code run in a browser standalone environment
+    let processedCode = code;
+
+    // Remove imports that won't work in browser without import maps (we provide React globally)
+    processedCode = processedCode.replace(/import\s+React.*?from\s+['"]react['"];?/g, '');
+    processedCode = processedCode.replace(/import\s+.*?from\s+['"]react-dom\/client['"];?/g, '');
+    processedCode = processedCode.replace(/import\s+.*?from\s+['"]lucide-react['"];?/g, ''); // Lucide icons not available in this simple harness
+
+    // Handle export default
+    // We want to capture the component name or class to mount it
+    // Strategy: Replace 'export default function App' with 'function App', then mount App.
+    // Or 'export default App' -> mount App.
+    
+    const componentNameMatch = processedCode.match(/export\s+default\s+(?:function|class)\s+([A-Z][a-zA-Z0-9]*)/);
+    let componentName = 'App'; // Default assumption
+
+    if (componentNameMatch) {
+        componentName = componentNameMatch[1];
+        // Remove 'export default' but keep 'function Name'
+        processedCode = processedCode.replace(/export\s+default\s+/, '');
+    } else {
+        // Check for 'export default Name;' at the end
+        const exportMatch = processedCode.match(/export\s+default\s+([A-Z][a-zA-Z0-9]*);?/);
+        if (exportMatch) {
+            componentName = exportMatch[1];
+            processedCode = processedCode.replace(/export\s+default\s+[A-Z][a-zA-Z0-9]*;?/, '');
+        }
+    }
+
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>React Preview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body { background-color: #ffffff; color: #1f2937; margin: 0; padding: 20px; font-family: system-ui, -apple-system, sans-serif; }
+        #root { width: 100%; height: 100%; }
+        /* Error Overlay */
+        #error-overlay { display: none; background: #fee2e2; color: #b91c1c; padding: 20px; border-radius: 8px; border: 1px solid #f87171; white-space: pre-wrap; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div id="error-overlay"></div>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        window.onerror = function(message, source, lineno, colno, error) {
+            const el = document.getElementById('error-overlay');
+            el.style.display = 'block';
+            el.innerText = 'Runtime Error:\\n' + message;
+        };
+
+        try {
+            const { useState, useEffect, useRef, useMemo, useCallback, useReducer, useContext, createContext } = React;
+            
+            // --- User Code Start ---
+            ${processedCode}
+            // --- User Code End ---
+
+            // Mount logic
+            const container = document.getElementById('root');
+            const root = ReactDOM.createRoot(container);
+            
+            // Check if the inferred component exists
+            if (typeof ${componentName} !== 'undefined') {
+                root.render(<${componentName} />);
+            } else if (typeof App !== 'undefined') {
+                root.render(<App />);
+            } else {
+                throw new Error("Could not find a component to render. Ensure you export a component named 'App' or use 'export default'.");
+            }
+        } catch (err) {
+            const el = document.getElementById('error-overlay');
+            el.style.display = 'block';
+            el.innerText = 'Render Error:\\n' + err.message;
+        }
+    </script>
+</body>
+</html>`;
+};
+
 const LanguageIcon: React.FC<{ language: string }> = ({ language }) => {
     const lang = language ? language.toLowerCase() : 'text';
+    
+    const getIcon = (l: string) => {
+        // Web / Scripting
+        if (['js', 'javascript', 'node', 'nodejs'].includes(l)) return 'fa-brands fa-js text-yellow-400';
+        if (['ts', 'typescript'].includes(l)) return 'fa-solid fa-code text-blue-400'; // No FA brand for TS yet, use generic code
+        if (['py', 'python', 'py3'].includes(l)) return 'fa-brands fa-python text-blue-500';
+        if (['php'].includes(l)) return 'fa-brands fa-php text-indigo-400';
+        if (['rb', 'ruby', 'rails'].includes(l)) return 'fa-solid fa-gem text-red-500';
+        if (['lua'].includes(l)) return 'fa-solid fa-moon text-blue-300';
+        if (['pl', 'perl'].includes(l)) return 'fa-solid fa-code text-indigo-500';
+
+        // Frontend
+        if (['html', 'htm', 'xml', 'svg'].includes(l)) return 'fa-brands fa-html5 text-orange-600';
+        if (['css'].includes(l)) return 'fa-brands fa-css3-alt text-blue-600';
+        if (['scss', 'sass', 'less'].includes(l)) return 'fa-brands fa-sass text-pink-500';
+        if (['react', 'jsx', 'tsx'].includes(l)) return 'fa-brands fa-react text-cyan-400';
+        if (['vue', 'vuejs'].includes(l)) return 'fa-brands fa-vuejs text-emerald-500';
+        if (['angular', 'ng'].includes(l)) return 'fa-brands fa-angular text-red-600';
+        if (['bootstrap'].includes(l)) return 'fa-brands fa-bootstrap text-purple-600';
+
+        // Compiled / Backend
+        if (['java', 'jvm'].includes(l)) return 'fa-brands fa-java text-red-500';
+        if (['c', 'cpp', 'c++', 'h', 'hpp'].includes(l)) return 'fa-solid fa-microchip text-blue-600';
+        if (['cs', 'csharp', 'c#'].includes(l)) return 'fa-brands fa-microsoft text-purple-500';
+        if (['go', 'golang'].includes(l)) return 'fa-brands fa-golang text-cyan-600';
+        if (['rust', 'rs'].includes(l)) return 'fa-brands fa-rust text-orange-600';
+        if (['swift'].includes(l)) return 'fa-brands fa-swift text-orange-500';
+        if (['r'].includes(l)) return 'fa-brands fa-r-project text-blue-400';
+
+        // Mobile / System
+        if (['android', 'kotlin', 'kt'].includes(l)) return 'fa-brands fa-android text-green-500';
+        if (['apple', 'ios', 'macos', 'objectivec', 'mm'].includes(l)) return 'fa-brands fa-apple text-gray-300';
+        if (['linux', 'ubuntu', 'debian', 'arch'].includes(l)) return 'fa-brands fa-linux text-yellow-200';
+        if (['windows', 'powershell', 'ps1', 'batch', 'cmd'].includes(l)) return 'fa-brands fa-windows text-blue-400';
+        if (['docker', 'dockerfile'].includes(l)) return 'fa-brands fa-docker text-blue-500';
+        
+        // Data / Config
+        if (['sql', 'mysql', 'postgres', 'postgresql', 'sqlite', 'plsql'].includes(l)) return 'fa-solid fa-database text-blue-300';
+        if (['json', 'json5'].includes(l)) return 'fa-solid fa-brackets-curly text-yellow-500'; // Valid FA? Use file-code if not
+        if (['yaml', 'yml', 'toml', 'ini', 'config'].includes(l)) return 'fa-solid fa-file-code text-purple-400';
+        if (['md', 'markdown'].includes(l)) return 'fa-brands fa-markdown text-[var(--theme-text-primary)]';
+        if (['csv', 'txt', 'text', 'log'].includes(l)) return 'fa-solid fa-file-lines text-gray-400';
+        
+        // Tools / Devops
+        if (['git', 'diff'].includes(l)) return 'fa-brands fa-git-alt text-orange-500';
+        if (['aws'].includes(l)) return 'fa-brands fa-aws text-orange-400';
+        if (['jenkins'].includes(l)) return 'fa-brands fa-jenkins text-gray-300';
+        if (['npm', 'yarn', 'pnpm'].includes(l)) return 'fa-brands fa-npm text-red-500';
+        if (['sh', 'bash', 'zsh', 'shell', 'terminal'].includes(l)) return 'fa-solid fa-terminal text-green-400';
+        
+        // Visual
+        if (['mermaid', 'graphviz', 'dot'].includes(l)) return 'fa-solid fa-project-diagram text-pink-400';
+        
+        // Fallback
+        return 'fa-solid fa-code text-gray-400';
+    };
+
     return (
-        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[var(--theme-bg-tertiary)] text-[var(--theme-text-secondary)] select-none uppercase tracking-wider font-sans opacity-90">
-            {lang}
-        </span>
+        <div className="flex items-center gap-2 select-none">
+            <i className={`${getIcon(lang)} text-lg w-5 text-center`} aria-hidden="true" />
+            <span className="text-[10px] font-bold text-[var(--theme-text-secondary)] uppercase tracking-wider font-sans opacity-90">
+                {lang}
+            </span>
+        </div>
     );
 };
 
@@ -28,11 +191,12 @@ interface CodeBlockProps {
   onOpenHtmlPreview: (html: string, options?: { initialTrueFullscreen?: boolean }) => void;
   expandCodeBlocksByDefault: boolean;
   t: (key: keyof typeof translations) => string;
+  onOpenSidePanel: (content: SideViewContent) => void;
 }
 
 const COLLAPSE_THRESHOLD_PX = 320;
 
-export const CodeBlock: React.FC<CodeBlockProps> = ({ children, className, onOpenHtmlPreview, expandCodeBlocksByDefault, t }) => {
+export const CodeBlock: React.FC<CodeBlockProps> = ({ children, className, onOpenHtmlPreview, expandCodeBlocksByDefault, t, onOpenSidePanel }) => {
     const preRef = useRef<HTMLPreElement>(null);
     const codeText = useRef<string>('');
     const [isOverflowing, setIsOverflowing] = useState(false);
@@ -131,7 +295,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ children, className, onOpe
                 // Set flag to true so the scroll handler knows this is programmatic
                 isAutoScrolling.current = true;
                 
-                // Use scrollTop assignment which is instant/smooth based on CSS 'scroll-smooth'
+                // Use scrollTop assignment. Removed 'scroll-smooth' from CSS to ensure instant update.
                 preElement.scrollTop = preElement.scrollHeight;
                 
                 // Reset the flag after a short delay to allow the scroll event(s) to fire and be ignored.
@@ -167,16 +331,60 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ children, className, onOpe
     else if (language === 'json') mimeType = 'application/json';
     else if (language === 'markdown' || language === 'md') mimeType = 'text/markdown';
 
-    // Determine if HTML features should be active based on current content OR language tag
+    // Determine if HTML/React features should be active
     const contentLooksLikeHtml = isLikelyHtml(codeText.current);
+    const contentLooksLikeReact = isLikelyReact(codeText.current, language);
     const isExplicitHtmlLanguage = ['html', 'xml', 'svg'].includes(language.toLowerCase());
     
-    // Show preview if content looks like HTML OR if the block is explicitly tagged as html/xml/svg
-    const showPreview = contentLooksLikeHtml || isExplicitHtmlLanguage;
+    // Show preview if content looks like HTML/React OR if the block is explicitly tagged as such
+    const showPreview = contentLooksLikeHtml || contentLooksLikeReact || isExplicitHtmlLanguage;
 
     const downloadMimeType = mimeType !== 'text/plain' ? mimeType : (showPreview ? 'text/html' : 'text/plain');
-    // Adjust final language display if content looks like HTML but was typed as txt
-    const finalLanguage = language === 'txt' && contentLooksLikeHtml ? 'html' : (language === 'xml' && contentLooksLikeHtml ? 'html' : language);
+    
+    // Adjust final language display
+    let finalLanguage = language;
+    if (language === 'txt' && contentLooksLikeHtml) finalLanguage = 'html';
+    else if (language === 'xml' && contentLooksLikeHtml) finalLanguage = 'html';
+    else if (contentLooksLikeReact) finalLanguage = 'react';
+
+    const preparePreviewContent = () => {
+        if (contentLooksLikeReact || finalLanguage === 'react' || finalLanguage === 'jsx' || finalLanguage === 'tsx') {
+            return {
+                content: generateReactPreview(codeText.current),
+                title: 'React Preview',
+                isReact: true
+            };
+        }
+        return {
+            content: codeText.current,
+            title: 'HTML Preview',
+            isReact: false
+        };
+    };
+
+    const handleOpenSide = () => {
+        const { content, title, isReact } = preparePreviewContent();
+        
+        let displayTitle = title;
+        if (!isReact && finalLanguage === 'html') {
+            const titleMatch = codeText.current.match(/<title[^>]*>([^<]+)<\/title>/i);
+            if (titleMatch && titleMatch[1]) {
+                displayTitle = titleMatch[1];
+            }
+        }
+        
+        onOpenSidePanel({
+            type: 'html', // SidePanel uses 'html' type which renders inside an iframe
+            content: content,
+            language: finalLanguage,
+            title: displayTitle
+        });
+    };
+
+    const handleFullscreenPreview = (trueFullscreen: boolean) => {
+        const { content } = preparePreviewContent();
+        onOpenHtmlPreview(content, { initialTrueFullscreen: trueFullscreen });
+    };
 
     return (
         <div className="group relative my-3 rounded-lg border border-[var(--theme-border-primary)] bg-[var(--theme-bg-code-block)] overflow-hidden shadow-sm">
@@ -189,17 +397,20 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ children, className, onOpe
                 <div className="flex items-center gap-0.5 flex-shrink-0">
                     {showPreview && (
                         <>
-                            <button className={MESSAGE_BLOCK_BUTTON_CLASS} title={t('code_fullscreen_monitor')} onClick={() => onOpenHtmlPreview(codeText.current, { initialTrueFullscreen: true })}> 
+                            <button className={`${MESSAGE_BLOCK_BUTTON_CLASS} hidden md:block`} title="Open in Side Panel" onClick={handleOpenSide}>
+                                <Sidebar size={14} strokeWidth={2} />
+                            </button>
+                            <button className={MESSAGE_BLOCK_BUTTON_CLASS} title={t('code_fullscreen_monitor')} onClick={() => handleFullscreenPreview(true)}> 
                                 <Expand size={14} strokeWidth={2} /> 
                             </button>
-                            <button className={MESSAGE_BLOCK_BUTTON_CLASS} title={t('code_fullscreen_modal')} onClick={() => onOpenHtmlPreview(codeText.current)}> 
+                            <button className={MESSAGE_BLOCK_BUTTON_CLASS} title={t('code_fullscreen_modal')} onClick={() => handleFullscreenPreview(false)}> 
                                 <Maximize2 size={14} strokeWidth={2} /> 
                             </button>
                         </>
                     )}
                     <button className={MESSAGE_BLOCK_BUTTON_CLASS} title={`Download ${finalLanguage.toUpperCase()}`} onClick={() => {
-                        let filename = `snippet.${finalLanguage}`;
-                        if (downloadMimeType === 'text/html') {
+                        let filename = `snippet.${finalLanguage === 'react' ? 'tsx' : finalLanguage}`;
+                        if (downloadMimeType === 'text/html' && !contentLooksLikeReact) {
                             const titleMatch = codeText.current.match(/<title[^>]*>([^<]+)<\/title>/i);
                             if (titleMatch && titleMatch[1]) {
                                 let saneTitle = titleMatch[1].trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '');
@@ -226,7 +437,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ children, className, onOpe
             <div className="relative">
                 <pre 
                     ref={preRef} 
-                    className={`${className} group !m-0 !p-0 !border-none !rounded-none !bg-transparent custom-scrollbar scroll-smooth !overflow-x-auto`}
+                    className={`${className} group !m-0 !p-0 !border-none !rounded-none !bg-transparent custom-scrollbar !overflow-x-auto`}
                     style={{
                         transition: 'max-height 0.3s ease-out',
                         overflowY: 'auto',
@@ -234,14 +445,14 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ children, className, onOpe
                     }}
                 >
                     {codeElement ? (
-                        React.cloneElement(codeElement, {
+                        React.cloneElement(codeElement as React.ReactElement, {
                             // Add !cursor-text to override the pointer cursor from InlineCode
                             className: `${codeElement.props.className || ''} !p-4 !block font-mono text-[13px] sm:text-sm leading-relaxed !cursor-text`,
                             // Disable the click-to-copy behavior for code blocks
                             onClick: undefined,
                             // Remove the "Click to copy" tooltip
                             title: undefined,
-                        })
+                        } as any)
                     ) : (
                         children
                     )}

@@ -1,11 +1,14 @@
 
-import { useCallback, Dispatch, SetStateAction, useRef } from 'react';
-import { AppSettings, ChatSettings as IndividualChatSettings, UploadedFile } from '../types';
-import { ALL_SUPPORTED_MIME_TYPES, SUPPORTED_IMAGE_MIME_TYPES, SUPPORTED_TEXT_MIME_TYPES, TEXT_BASED_EXTENSIONS, SUPPORTED_PDF_MIME_TYPES, SUPPORTED_AUDIO_MIME_TYPES, SUPPORTED_VIDEO_MIME_TYPES } from '../constants/fileConstants';
+
+
+import React, { useCallback, Dispatch, SetStateAction, useRef } from 'react';
+import { AppSettings, ChatSettings as IndividualChatSettings, UploadedFile, MediaResolution } from '../types';
+import { ALL_SUPPORTED_MIME_TYPES, SUPPORTED_IMAGE_MIME_TYPES, SUPPORTED_TEXT_MIME_TYPES, TEXT_BASED_EXTENSIONS, SUPPORTED_PDF_MIME_TYPES, SUPPORTED_AUDIO_MIME_TYPES, SUPPORTED_VIDEO_MIME_TYPES, EXTENSION_TO_MIME } from '../constants/fileConstants';
 import { generateUniqueId, getKeyForRequest, fileToBlobUrl } from '../utils/appUtils';
 import { geminiServiceInstance } from '../services/geminiService';
 import { logService } from '../services/logService';
 import { generateZipContext } from '../utils/folderImportUtils';
+import { compressAudioToMp3 } from '../utils/audioCompression';
 
 interface UseFileUploadProps {
     appSettings: AppSettings;
@@ -24,28 +27,6 @@ const formatSpeed = (bytesPerSecond: number): string => {
 };
 
 const LARGE_FILE_THRESHOLD = 19 * 1024 * 1024; // 19MB margin for 20MB limit
-
-const EXTENSION_TO_MIME: Record<string, string> = {
-    '.mp4': 'video/mp4',
-    '.mov': 'video/quicktime',
-    '.avi': 'video/avi',
-    '.wmv': 'video/x-ms-wmv',
-    '.mpg': 'video/mpeg',
-    '.mpeg': 'video/mpeg',
-    '.webm': 'video/webm',
-    '.flv': 'video/x-flv',
-    '.3gp': 'video/3gpp',
-    '.pdf': 'application/pdf',
-    '.mp3': 'audio/mpeg',
-    '.wav': 'audio/wav',
-    '.aac': 'audio/aac',
-    '.ogg': 'audio/ogg',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png': 'image/png',
-    '.webp': 'image/webp',
-    '.gif': 'image/gif',
-};
 
 export const useFileUpload = ({
     appSettings,
@@ -67,11 +48,16 @@ export const useFileUpload = ({
         const rawFilesArray = Array.isArray(files) ? files : Array.from(files);
         const filesArray: File[] = [];
 
-        // Pre-process ZIP files: Auto-convert to text context
+        // Pre-process files (ZIP extraction, Audio compression)
         for (const file of rawFilesArray) {
-            if (file.name.toLowerCase().endsWith('.zip')) {
+            const fileNameLower = file.name.toLowerCase();
+            
+            // Expanded audio detection
+            const isAudio = file.type.startsWith('audio/') || 
+                ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac', '.webm', '.wma', '.aiff'].some(ext => fileNameLower.endsWith(ext));
+
+            if (fileNameLower.endsWith('.zip')) {
                 const tempId = generateUniqueId();
-                // Add temp feedback
                 setSelectedFiles(prev => [...prev, {
                     id: tempId,
                     name: `Processing ${file.name}...`,
@@ -87,11 +73,44 @@ export const useFileUpload = ({
                     filesArray.push(contextFile);
                 } catch (error) {
                     logService.error(`Failed to auto-convert zip file ${file.name}`, { error });
-                    // Fallback to original file
                     filesArray.push(file);
                 } finally {
-                    // Remove temp feedback
                     setSelectedFiles(prev => prev.filter(f => f.id !== tempId));
+                }
+            } else if (isAudio) {
+                if (appSettings.isAudioCompressionEnabled) {
+                    // Auto-compress audio
+                    const tempId = generateUniqueId();
+                    const abortController = new AbortController();
+
+                    setSelectedFiles(prev => [...prev, {
+                        id: tempId,
+                        name: `Compressing ${file.name}...`,
+                        type: file.type || 'audio/mpeg',
+                        size: file.size,
+                        isProcessing: true,
+                        uploadState: 'pending',
+                        abortController: abortController
+                    }]);
+
+                    try {
+                        logService.info(`Compressing audio file: ${file.name}`);
+                        const compressedFile = await compressAudioToMp3(file, abortController.signal);
+                        filesArray.push(compressedFile);
+                    } catch (error) {
+                        const isAbort = (error instanceof Error || error instanceof DOMException) && error.name === 'AbortError';
+                        if (isAbort) {
+                             logService.info(`Compression cancelled for ${file.name}`);
+                             // Do not push to filesArray, effectively removing it
+                        } else {
+                            logService.error(`Failed to compress audio file ${file.name}`, { error });
+                            filesArray.push(file); // Fallback to original
+                        }
+                    } finally {
+                        setSelectedFiles(prev => prev.filter(f => f.id !== tempId));
+                    }
+                } else {
+                    filesArray.push(file);
                 }
             } else {
                 filesArray.push(file);
@@ -148,6 +167,11 @@ export const useFileUpload = ({
             }
         }
 
+        // Determine default resolution for new files
+        const defaultResolution = currentChatSettings.mediaResolution !== MediaResolution.MEDIA_RESOLUTION_UNSPECIFIED
+            ? currentChatSettings.mediaResolution
+            : undefined;
+
         const uploadPromises = filesArray.map(async (file) => {
             const fileId = generateUniqueId();
             const effectiveMimeType = getEffectiveMimeType(file);
@@ -191,7 +215,8 @@ export const useFileUpload = ({
                     dataUrl: dataUrl, // Add local preview URL
                     uploadState: 'uploading', 
                     abortController: controller,
-                    uploadSpeed: 'Starting...'
+                    uploadSpeed: 'Starting...',
+                    mediaResolution: defaultResolution
                 };
                 
                 // Initialize tracking for speed calculation
@@ -275,7 +300,18 @@ export const useFileUpload = ({
                 }
             } else {
                 // Inline processing (Base64 or Text content)
-                const initialFileState: UploadedFile = { id: fileId, name: file.name, type: effectiveMimeType, size: file.size, isProcessing: true, progress: 0, uploadState: 'pending', rawFile: file, dataUrl: dataUrl };
+                const initialFileState: UploadedFile = { 
+                    id: fileId, 
+                    name: file.name, 
+                    type: effectiveMimeType, 
+                    size: file.size, 
+                    isProcessing: true, 
+                    progress: 0, 
+                    uploadState: 'pending', 
+                    rawFile: file, 
+                    dataUrl: dataUrl,
+                    mediaResolution: defaultResolution
+                };
                 setSelectedFiles(prev => [...prev, initialFileState]);
 
                 // For text files being sent inline, we need to read the content now or during payload construction.
@@ -331,7 +367,11 @@ export const useFileUpload = ({
         }
 
         const tempId = generateUniqueId();
-        setSelectedFiles(prev => [...prev, { id: tempId, name: `Loading ${fileApiId}...`, type: 'application/octet-stream', size: 0, isProcessing: true, progress: 50, uploadState: 'processing_api', fileApiName: fileApiId, }]);
+        const defaultResolution = currentChatSettings.mediaResolution !== MediaResolution.MEDIA_RESOLUTION_UNSPECIFIED
+            ? currentChatSettings.mediaResolution
+            : undefined;
+
+        setSelectedFiles(prev => [...prev, { id: tempId, name: `Loading ${fileApiId}...`, type: 'application/octet-stream', size: 0, isProcessing: true, progress: 50, uploadState: 'processing_api', fileApiName: fileApiId, mediaResolution: defaultResolution }]);
 
         try {
             const fileMetadata = await geminiServiceInstance.getFileMetadata(keyToUse, fileApiId);
@@ -348,7 +388,19 @@ export const useFileUpload = ({
                     setSelectedFiles(prev => prev.map(f => f.id === tempId ? { ...f, name: fileMetadata.displayName || fileApiId, type: fileMetadata.mimeType, size: Number(fileMetadata.sizeBytes) || 0, isProcessing: false, error: `Unsupported file type: ${fileMetadata.mimeType}`, uploadState: 'failed' } : f));
                     return;
                 }
-                const newFile: UploadedFile = { id: tempId, name: fileMetadata.displayName || fileApiId, type: fileMetadata.mimeType, size: Number(fileMetadata.sizeBytes) || 0, fileUri: fileMetadata.uri, fileApiName: fileMetadata.name, isProcessing: fileMetadata.state === 'PROCESSING', progress: 100, uploadState: fileMetadata.state === 'ACTIVE' ? 'active' : (fileMetadata.state === 'PROCESSING' ? 'processing_api' : 'failed'), error: fileMetadata.state === 'FAILED' ? 'File API processing failed' : undefined, };
+                const newFile: UploadedFile = { 
+                    id: tempId, 
+                    name: fileMetadata.displayName || fileApiId, 
+                    type: fileMetadata.mimeType, 
+                    size: Number(fileMetadata.sizeBytes) || 0, 
+                    fileUri: fileMetadata.uri, 
+                    fileApiName: fileMetadata.name, 
+                    isProcessing: fileMetadata.state === 'PROCESSING', 
+                    progress: 100, 
+                    uploadState: fileMetadata.state === 'ACTIVE' ? 'active' : (fileMetadata.state === 'PROCESSING' ? 'processing_api' : 'failed'), 
+                    error: fileMetadata.state === 'FAILED' ? 'File API processing failed' : undefined,
+                    mediaResolution: defaultResolution
+                };
                 setSelectedFiles(prev => prev.map(f => f.id === tempId ? newFile : f));
             } else {
                 logService.error(`File with ID ${fileApiId} not found or inaccessible.`);

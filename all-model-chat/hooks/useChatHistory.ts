@@ -1,12 +1,11 @@
-
-import { Dispatch, SetStateAction, useCallback } from 'react';
-import { AppSettings, ChatMessage, SavedChatSession, UploadedFile, ChatSettings, ChatGroup } from '../types';
+import React, { Dispatch, SetStateAction, useCallback } from 'react';
+import { AppSettings, ChatMessage, SavedChatSession, UploadedFile, ChatSettings, ChatGroup, InputCommand } from '../types';
 import { DEFAULT_CHAT_SETTINGS } from '../constants/appConstants';
-import { generateUniqueId, logService, getTranslator } from '../utils/appUtils';
+import { createNewSession, logService, getTranslator } from '../utils/appUtils';
 import { dbService } from '../utils/db';
 import { SUPPORTED_IMAGE_MIME_TYPES } from '../constants/fileConstants';
 
-type CommandedInputSetter = Dispatch<SetStateAction<{ text: string; id: number; } | null>>;
+type CommandedInputSetter = Dispatch<SetStateAction<InputCommand | null>>;
 type SessionsUpdater = (updater: (prev: SavedChatSession[]) => SavedChatSession[], options?: { persist?: boolean }) => Promise<void>;
 type GroupsUpdater = (updater: (prev: ChatGroup[]) => ChatGroup[]) => Promise<void>;
 
@@ -88,6 +87,9 @@ export const useChatHistory = ({
         if (activeChat) {
             settingsForNewChat = {
                 ...settingsForNewChat,
+                modelId: activeChat.settings.modelId,
+                thinkingBudget: activeChat.settings.thinkingBudget,
+                thinkingLevel: activeChat.settings.thinkingLevel,
                 isGoogleSearchEnabled: activeChat.settings.isGoogleSearchEnabled,
                 isCodeExecutionEnabled: activeChat.settings.isCodeExecutionEnabled,
                 isUrlContextEnabled: activeChat.settings.isUrlContextEnabled,
@@ -95,19 +97,11 @@ export const useChatHistory = ({
             };
         }
 
-        const newSessionId = generateUniqueId();
-        const newSession: SavedChatSession = {
-            id: newSessionId,
-            title: "New Chat",
-            messages: [],
-            timestamp: Date.now(),
-            settings: settingsForNewChat,
-            groupId: null,
-        };
+        const newSession = createNewSession(settingsForNewChat);
 
         updateAndPersistSessions(prev => [newSession, ...prev.filter(s => s.messages.length > 0)]);
-        setActiveSessionId(newSessionId);
-        dbService.setActiveSessionId(newSessionId);
+        setActiveSessionId(newSession.id);
+        dbService.setActiveSessionId(newSession.id);
 
         // Don't force clear text (handled by localStorage draft for new ID)
         // Clear files for new chat
@@ -213,10 +207,33 @@ export const useChatHistory = ({
         );
     }, [updateAndPersistSessions]);
 
+    const handleDuplicateSession = useCallback((sessionId: string) => {
+        logService.info(`Duplicating session: ${sessionId}`);
+        updateAndPersistSessions(prev => {
+            const sessionToDuplicate = prev.find(s => s.id === sessionId);
+            if (!sessionToDuplicate) return prev;
+
+            const newSession = createNewSession(
+                sessionToDuplicate.settings,
+                // We recreate messages with new IDs to prevent key collisions during rendering or updates
+                // while preserving the content.
+                sessionToDuplicate.messages.map(m => ({
+                    ...m,
+                    id: `chat-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, // Inline simple ID or use generateUniqueId
+                    isLoading: false,
+                    generationStartTime: undefined,
+                    generationEndTime: undefined
+                })),
+                `${sessionToDuplicate.title} (Copy)`
+            );
+            return [newSession, ...prev];
+        });
+    }, [updateAndPersistSessions]);
+
     const handleAddNewGroup = useCallback(() => {
         logService.info('Adding new group.');
         const newGroup: ChatGroup = {
-            id: `group-${generateUniqueId()}`,
+            id: `group-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
             title: t('newGroup_title', 'Untitled'),
             timestamp: Date.now(),
             isExpanded: true,
@@ -272,6 +289,7 @@ export const useChatHistory = ({
         handleDeleteChatHistorySession,
         handleRenameSession,
         handleTogglePinSession,
+        handleDuplicateSession,
         handleAddNewGroup,
         handleDeleteGroup,
         handleRenameGroup,

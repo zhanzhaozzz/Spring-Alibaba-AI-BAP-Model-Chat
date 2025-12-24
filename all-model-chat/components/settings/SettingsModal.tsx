@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, useLayoutEffect } from 'react';
 import { AppSettings, ModelOption } from '../../types';
 import { X } from 'lucide-react';
 import { DEFAULT_APP_SETTINGS, THINKING_BUDGET_RANGES } from '../../constants/appConstants';
 import { Theme } from '../../constants/themeConstants';
-import { translations, logService } from '../../utils/appUtils';
+import { translations, logService, cacheModelSettings, getCachedModelSettings } from '../../utils/appUtils';
 import { ApiConfigSection } from './ApiConfigSection';
 import { AppearanceSection } from './AppearanceSection';
 import { ChatBehaviorSection } from './ChatBehaviorSection';
@@ -14,6 +14,7 @@ import { AboutSection } from './AboutSection';
 import { Modal } from '../shared/Modal';
 import { ConfirmationModal } from '../modals/ConfirmationModal';
 import { IconInterface, IconModel, IconApiKey, IconData, IconAbout, IconKeyboard } from '../icons/CustomIcons';
+import { MediaResolution } from '../../types/settings';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,8 +23,6 @@ interface SettingsModalProps {
   availableModels: ModelOption[];
   availableThemes: Theme[]; 
   onSave: (newSettings: AppSettings) => void; 
-  isModelsLoading: boolean;
-  modelsLoadingError: string | null;
   onClearAllHistory: () => void;
   onClearCache: () => void;
   onOpenLogViewer: () => void;
@@ -45,7 +44,7 @@ const SETTINGS_TAB_STORAGE_KEY = 'chatSettingsLastTab';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen, onClose, currentSettings, availableModels, availableThemes, 
-  onSave, isModelsLoading, modelsLoadingError, onClearAllHistory, onClearCache, onOpenLogViewer,
+  onSave, onClearAllHistory, onClearCache, onOpenLogViewer,
   onInstallPwa, isInstallable, t, 
   onImportSettings, onExportSettings,
   onImportHistory, onExportHistory,
@@ -55,14 +54,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
     try {
       const saved = localStorage.getItem(SETTINGS_TAB_STORAGE_KEY);
-      const validTabs: SettingsTab[] = ['interface', 'model', 'account', 'data', 'shortcuts', 'about'];
+      const validTabs: SettingsTab[] = ['model', 'interface', 'account', 'data', 'shortcuts', 'about'];
       if (saved && validTabs.includes(saved as SettingsTab)) {
         return saved as SettingsTab;
       }
     } catch (e) {
       // Ignore storage errors
     }
-    return 'interface';
+    return 'model';
   });
   
   const [confirmConfig, setConfirmConfig] = useState<{
@@ -71,9 +70,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     message: string;
     onConfirm: () => void;
     isDanger?: boolean;
+    confirmLabel?: string;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollSaveTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (activeTab) {
@@ -81,9 +83,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   }, [activeTab]);
 
+  // Restore scroll position when tab changes or modal opens
+  useLayoutEffect(() => {
+    if (isOpen && scrollContainerRef.current) {
+        const key = `chatSettingsScroll_${activeTab}`;
+        const savedPosition = localStorage.getItem(key);
+        
+        // Use requestAnimationFrame to ensure content has reflowed
+        requestAnimationFrame(() => {
+            if (scrollContainerRef.current) {
+                scrollContainerRef.current.scrollTop = savedPosition ? parseInt(savedPosition, 10) : 0;
+            }
+        });
+    }
+  }, [activeTab, isOpen]);
+
+  const handleContentScroll = (e: React.UIEvent<HTMLDivElement>) => {
+      const scrollTop = e.currentTarget.scrollTop;
+      
+      if (scrollSaveTimeoutRef.current) {
+          clearTimeout(scrollSaveTimeoutRef.current);
+      }
+      
+      // Debounce saving to localStorage
+      scrollSaveTimeoutRef.current = window.setTimeout(() => {
+          localStorage.setItem(`chatSettingsScroll_${activeTab}`, scrollTop.toString());
+      }, 150);
+  };
+
   if (!isOpen) return null;
 
-  const handleClose = () => { onClose(); };
+  const handleClose = useCallback(() => { onClose(); }, [onClose]);
   
   const handleResetToDefaults = () => { 
     setConfirmConfig({
@@ -91,7 +121,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         title: t('settingsReset'),
         message: t('settingsReset_confirm'),
         onConfirm: () => onSave(DEFAULT_APP_SETTINGS),
-        isDanger: true
+        isDanger: true,
+        confirmLabel: t('settingsReset')
     });
   };
   
@@ -101,7 +132,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           title: t('settingsClearLogs'),
           message: t('settingsClearLogs_confirm'),
           onConfirm: async () => { await logService.clearLogs(); },
-          isDanger: true
+          isDanger: true,
+          confirmLabel: t('delete')
       });
   };
   
@@ -111,7 +143,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           title: t('settingsClearHistory'),
           message: t('settingsClearHistory_confirm'),
           onConfirm: onClearAllHistory,
-          isDanger: true
+          isDanger: true,
+          confirmLabel: t('delete')
       });
   };
 
@@ -121,7 +154,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           title: t('settingsClearCache'),
           message: t('settingsClearCache_confirm'),
           onConfirm: onClearCache,
-          isDanger: true
+          isDanger: true,
+          confirmLabel: t('delete')
       });
   };
 
@@ -131,7 +165,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           title: t('settingsImportHistory'),
           message: t('settingsImportHistory_confirm'),
           onConfirm: () => onImportHistory(file),
-          isDanger: true
+          isDanger: false,
+          confirmLabel: t('import')
       });
   };
   
@@ -139,26 +174,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onSave({ ...currentSettings, [key]: value });
   };
 
-  const handleModelChangeInSettings = (newModelId: string) => {
-    const isThinkingModel = Object.keys(THINKING_BUDGET_RANGES).includes(newModelId);
-    let newThinkingBudget;
+  const handleModelChange = (newModelId: string) => {
+      // 1. Cache current model settings
+      if (currentSettings.modelId) {
+          cacheModelSettings(currentSettings.modelId, { 
+              mediaResolution: currentSettings.mediaResolution,
+              thinkingBudget: currentSettings.thinkingBudget,
+              thinkingLevel: currentSettings.thinkingLevel
+          });
+      }
 
-    if (isThinkingModel) {
-        newThinkingBudget = THINKING_BUDGET_RANGES[newModelId].max;
-    } else {
-        newThinkingBudget = DEFAULT_APP_SETTINGS.thinkingBudget;
-    }
-    
-    onSave({
-        ...currentSettings,
-        modelId: newModelId,
-        thinkingBudget: newThinkingBudget
-    });
+      // 2. Load cached settings for new model
+      const cached = getCachedModelSettings(newModelId);
+      
+      let newThinkingBudget = cached?.thinkingBudget ?? currentSettings.thinkingBudget;
+      const newThinkingLevel = cached?.thinkingLevel ?? currentSettings.thinkingLevel;
+      const newMediaResolution = cached?.mediaResolution ?? currentSettings.mediaResolution ?? MediaResolution.MEDIA_RESOLUTION_UNSPECIFIED;
+
+      // 3. Apply defaults/clamping logic (mirroring useChatActions)
+      const range = THINKING_BUDGET_RANGES[newModelId];
+      if (range) {
+          const isGemini3 = newModelId.includes('gemini-3');
+          
+          if (cached?.thinkingBudget === undefined) {
+              if (!isGemini3 && newThinkingBudget !== 0) {
+                  newThinkingBudget = range.max;
+              }
+          }
+
+          if (newThinkingBudget > 0) {
+              if (newThinkingBudget > range.max) newThinkingBudget = range.max;
+              if (newThinkingBudget < range.min) newThinkingBudget = range.min;
+          }
+      }
+
+      onSave({
+          ...currentSettings,
+          modelId: newModelId,
+          thinkingBudget: newThinkingBudget,
+          thinkingLevel: newThinkingLevel,
+          mediaResolution: newMediaResolution,
+      });
   };
 
   const tabs = useMemo(() => [
-    { id: 'interface' as SettingsTab, labelKey: 'settingsTabInterface', icon: IconInterface },
     { id: 'model' as SettingsTab, labelKey: 'settingsTabModel', icon: IconModel },
+    { id: 'interface' as SettingsTab, labelKey: 'settingsTabInterface', icon: IconInterface },
     { id: 'account' as SettingsTab, labelKey: 'settingsTabAccount', icon: IconApiKey },
     { id: 'data' as SettingsTab, labelKey: 'settingsTabData', icon: IconData },
     { id: 'shortcuts' as SettingsTab, labelKey: 'settingsTabShortcuts', icon: IconKeyboard },
@@ -170,6 +231,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       
       return (
         <div className="max-w-3xl mx-auto w-full">
+            {activeTab === 'model' && (
+                <div className={`${animClass} max-w-4xl mx-auto`}>
+                <ChatBehaviorSection
+                    modelId={currentSettings.modelId} 
+                    setModelId={handleModelChange}
+                    transcriptionModelId={currentSettings.transcriptionModelId} setTranscriptionModelId={(v) => updateSetting('transcriptionModelId', v)}
+                    generateQuadImages={currentSettings.generateQuadImages ?? false} setGenerateQuadImages={(v) => updateSetting('generateQuadImages', v)}
+                    ttsVoice={currentSettings.ttsVoice} setTtsVoice={(v) => updateSetting('ttsVoice', v)}
+                    systemInstruction={currentSettings.systemInstruction} setSystemInstruction={(v) => updateSetting('systemInstruction', v)}
+                    temperature={currentSettings.temperature} setTemperature={(v) => updateSetting('temperature', v)}
+                    topP={currentSettings.topP} setTopP={(v) => updateSetting('topP', v)}
+                    showThoughts={currentSettings.showThoughts} setShowThoughts={(v) => updateSetting('showThoughts', v)}
+                    thinkingBudget={currentSettings.thinkingBudget} setThinkingBudget={(v) => updateSetting('thinkingBudget', v)}
+                    thinkingLevel={currentSettings.thinkingLevel} setThinkingLevel={(v) => updateSetting('thinkingLevel', v)}
+                    safetySettings={currentSettings.safetySettings} setSafetySettings={(v) => updateSetting('safetySettings', v)}
+                    mediaResolution={currentSettings.mediaResolution} setMediaResolution={(v) => updateSetting('mediaResolution', v)}
+                    availableModels={availableModels}
+                    t={t}
+                    setAvailableModels={setAvailableModels}
+                />
+                </div>
+            )}
             {activeTab === 'interface' && (
                 <div className={animClass}>
                     <AppearanceSection
@@ -201,32 +284,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     setAutoFullscreenHtml={(v) => updateSetting('autoFullscreenHtml', v)}
                     showWelcomeSuggestions={currentSettings.showWelcomeSuggestions ?? true}
                     setShowWelcomeSuggestions={(v) => updateSetting('showWelcomeSuggestions', v)}
+                    isAudioCompressionEnabled={currentSettings.isAudioCompressionEnabled}
+                    setIsAudioCompressionEnabled={(v) => updateSetting('isAudioCompressionEnabled', v)}
                     filesApiConfig={currentSettings.filesApiConfig}
                     setFilesApiConfig={(v) => updateSetting('filesApiConfig', v)}
                     t={t}
                     />
-                </div>
-            )}
-            {activeTab === 'model' && (
-                <div className={`${animClass} max-w-4xl mx-auto`}>
-                <ChatBehaviorSection
-                    modelId={currentSettings.modelId} setModelId={handleModelChangeInSettings}
-                    transcriptionModelId={currentSettings.transcriptionModelId} setTranscriptionModelId={(v) => updateSetting('transcriptionModelId', v)}
-                    generateQuadImages={currentSettings.generateQuadImages ?? false} setGenerateQuadImages={(v) => updateSetting('generateQuadImages', v)}
-                    ttsVoice={currentSettings.ttsVoice} setTtsVoice={(v) => updateSetting('ttsVoice', v)}
-                    systemInstruction={currentSettings.systemInstruction} setSystemInstruction={(v) => updateSetting('systemInstruction', v)}
-                    temperature={currentSettings.temperature} setTemperature={(v) => updateSetting('temperature', v)}
-                    topP={currentSettings.topP} setTopP={(v) => updateSetting('topP', v)}
-                    showThoughts={currentSettings.showThoughts} setShowThoughts={(v) => updateSetting('showThoughts', v)}
-                    thinkingBudget={currentSettings.thinkingBudget} setThinkingBudget={(v) => updateSetting('thinkingBudget', v)}
-                    thinkingLevel={currentSettings.thinkingLevel} setThinkingLevel={(v) => updateSetting('thinkingLevel', v)}
-                    safetySettings={currentSettings.safetySettings} setSafetySettings={(v) => updateSetting('safetySettings', v)}
-                    isModelsLoading={isModelsLoading}
-                    modelsLoadingError={modelsLoadingError}
-                    availableModels={availableModels}
-                    t={t}
-                    setAvailableModels={setAvailableModels}
-                />
                 </div>
             )}
             {activeTab === 'account' && (
@@ -332,7 +395,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </header>
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 md:p-8">
+            <div 
+                ref={scrollContainerRef}
+                onScroll={handleContentScroll}
+                className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 md:p-8"
+            >
                 {renderTabContent()}
             </div>
         </main>
@@ -346,7 +413,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 title={confirmConfig.title}
                 message={confirmConfig.message}
                 isDanger={confirmConfig.isDanger}
-                confirmLabel={t('delete') === 'Delete' ? 'Confirm' : t('delete')}
+                confirmLabel={confirmConfig.confirmLabel}
+                cancelLabel={t('cancel')}
             />
         )}
     </>

@@ -1,13 +1,14 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Paperclip, Loader2 } from 'lucide-react';
 import { Header } from '../header/Header';
 import { MessageList } from '../chat/MessageList';
 import { ChatInput } from '../chat/ChatInput';
 import { useResponsiveValue } from '../../hooks/useDevice';
-import { ChatSettings, ChatMessage, UploadedFile, AppSettings, ModelOption } from '../../types';
+import { ChatSettings, ChatMessage, UploadedFile, AppSettings, ModelOption, SideViewContent, VideoMetadata, InputCommand } from '../../types';
 import { ThemeColors } from '../../constants/themeConstants';
 import { translations } from '../../utils/appUtils';
+import { MediaResolution } from '../../types/settings';
 
 export interface ChatAreaProps {
   activeSessionId: string | null;
@@ -32,14 +33,11 @@ export interface ChatAreaProps {
   availableModels: ModelOption[];
   selectedModelId: string;
   onSelectModel: (modelId: string) => void;
-  isModelsLoading: boolean;
   isSwitchingModel: boolean;
   isHistorySidebarOpen: boolean;
   onLoadCanvasPrompt: () => void;
   isCanvasPromptActive: boolean;
   isKeyLocked: boolean;
-  defaultModelId: string;
-  onSetDefaultModel: (modelId: string) => void;
   themeId: string;
   onSetThinkingLevel: (level: 'LOW' | 'HIGH') => void;
 
@@ -72,11 +70,12 @@ export interface ChatAreaProps {
   
   // Edit Content
   onEditMessageContent: (message: ChatMessage) => void;
+  onUpdateMessageFile: (messageId: string, fileId: string, updates: { videoMetadata?: VideoMetadata, mediaResolution?: MediaResolution }) => void;
 
   // ChatInput Props
   appSettings: AppSettings;
-  commandedInput: { text: string; id: number } | null;
-  setCommandedInput: (command: { text: string; id: number } | null) => void;
+  commandedInput: InputCommand | null;
+  setCommandedInput: (command: InputCommand | null) => void;
   onMessageSent: () => void;
   selectedFiles: UploadedFile[];
   setSelectedFiles: (files: UploadedFile[] | ((prevFiles: UploadedFile[]) => UploadedFile[])) => void;
@@ -123,6 +122,9 @@ export interface ChatAreaProps {
   generateQuadImages: boolean;
   onToggleQuadImages: () => void;
 
+  // Side Panel
+  onOpenSidePanel: (content: SideViewContent) => void;
+
   t: (key: keyof typeof translations, fallback?: string) => string;
 }
 
@@ -131,14 +133,14 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
     activeSessionId, sessionTitle, currentChatSettings, setAppFileError,
     isAppDraggingOver, isProcessingDrop, handleAppDragEnter, handleAppDragOver, handleAppDragLeave, handleAppDrop,
     onNewChat, onOpenSettingsModal, onOpenScenariosModal, onToggleHistorySidebar, isLoading,
-    currentModelName, availableModels, selectedModelId, onSelectModel, isModelsLoading,
+    currentModelName, availableModels, selectedModelId, onSelectModel,
     isSwitchingModel, isHistorySidebarOpen, onLoadCanvasPrompt, isCanvasPromptActive,
-    isKeyLocked, defaultModelId, onSetDefaultModel, themeId, modelsLoadingError,
+    isKeyLocked, themeId, modelsLoadingError,
     messages, scrollContainerRef, setScrollContainerRef, onScrollContainerScroll, onEditMessage,
     onDeleteMessage, onRetryMessage, showThoughts, themeColors, baseFontSize,
     expandCodeBlocksByDefault, isMermaidRenderingEnabled, isGraphvizRenderingEnabled,
     onSuggestionClick, onOrganizeInfoClick, onFollowUpSuggestionClick, onTextToSpeech, ttsMessageId, language, scrollNavVisibility,
-    onScrollToPrevTurn, onScrollToNextTurn, onEditMessageContent,
+    onScrollToPrevTurn, onScrollToNextTurn, onEditMessageContent, onUpdateMessageFile,
     appSettings, commandedInput, setCommandedInput, onMessageSent,
     selectedFiles, setSelectedFiles, onSendMessage, isEditing, onStopGenerating,
     onCancelEdit, onProcessFiles, onAddFileById, onCancelUpload, onTranscribeAudio,
@@ -151,6 +153,7 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
     isPipSupported, isPipActive, onTogglePip,
     generateQuadImages, onToggleQuadImages,
     onSetThinkingLevel, setCurrentChatSettings,
+    onOpenSidePanel,
     t
   } = props;
 
@@ -176,6 +179,10 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
 
   // Determine if the model supports aspect ratio selection (Imagen models OR Gemini 2.5 Flash Image)
   const isImagenModel = currentChatSettings.modelId?.includes('imagen') || currentChatSettings.modelId?.includes('gemini-2.5-flash-image');
+
+  const handleQuote = useCallback((text: string) => {
+      setCommandedInput({ text: text, id: Date.now(), mode: 'quote' });
+  }, [setCommandedInput]);
 
   return (
     <div
@@ -206,15 +213,12 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
         availableModels={availableModels}
         selectedModelId={selectedModelId}
         onSelectModel={onSelectModel}
-        isModelsLoading={isModelsLoading}
         isSwitchingModel={isSwitchingModel}
         isHistorySidebarOpen={isHistorySidebarOpen}
         onLoadCanvasPrompt={onLoadCanvasPrompt}
         isCanvasPromptActive={isCanvasPromptActive}
         t={t}
         isKeyLocked={isKeyLocked}
-        defaultModelId={defaultModelId}
-        onSetDefaultModel={onSetDefaultModel}
         isPipSupported={isPipSupported}
         isPipActive={isPipActive}
         onTogglePip={onTogglePip}
@@ -254,6 +258,10 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
         onScrollToNextTurn={onScrollToNextTurn}
         chatInputHeight={chatInputHeight}
         appSettings={appSettings}
+        currentModelId={currentChatSettings.modelId} 
+        onOpenSidePanel={onOpenSidePanel}
+        onUpdateMessageFile={onUpdateMessageFile}
+        onQuote={handleQuote}
       />
       <div ref={chatInputContainerRef} className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none">
         <div className="pointer-events-auto">
@@ -304,10 +312,12 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
             onTogglePip={onTogglePip}
             isPipActive={isPipActive}
             isHistorySidebarOpen={isHistorySidebarOpen}
-            onSetDefaultModel={onSetDefaultModel}
             generateQuadImages={generateQuadImages}
             onToggleQuadImages={onToggleQuadImages}
             setCurrentChatSettings={setCurrentChatSettings}
+            onSuggestionClick={onSuggestionClick}
+            onOrganizeInfoClick={onOrganizeInfoClick}
+            showEmptyStateSuggestions={messages.length === 0}
           />
         </div>
       </div>

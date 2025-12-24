@@ -1,5 +1,4 @@
-
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { SavedScenario } from '../types';
 import { translations } from '../utils/appUtils';
 import { generateUniqueId } from '../utils/appUtils';
@@ -7,7 +6,7 @@ import { triggerDownload, sanitizeFilename } from '../utils/exportUtils';
 
 export type ModalView = 'list' | 'editor';
 
-const SYSTEM_SCENARIO_IDS = ['fop-scenario-default', 'unrestricted-scenario-default', 'pyrite-scenario-default'];
+const SYSTEM_SCENARIO_IDS = ['succinct-scenario-default', 'socratic-scenario-default', 'formal-scenario-default', 'reasoner-scenario-default'];
 
 interface UseScenarioManagerProps {
   isOpen: boolean;
@@ -57,6 +56,18 @@ export const useScenarioManager = ({
     setEditingScenario(scenario);
     setView('editor');
   }, []);
+
+  const handleDuplicateScenario = useCallback((scenario: SavedScenario) => {
+    const newScenario: SavedScenario = {
+      ...scenario,
+      id: generateUniqueId(),
+      title: `${scenario.title} (Copy)`,
+      messages: scenario.messages.map(m => ({ ...m, id: generateUniqueId() })) // Deep copy messages with new IDs
+    };
+    
+    setScenarios(prev => [newScenario, ...prev]);
+    showFeedback('success', t('scenarios_feedback_duplicated'));
+  }, [showFeedback, t]);
 
   const handleCancelEdit = useCallback(() => {
     setEditingScenario(null);
@@ -169,6 +180,7 @@ export const useScenarioManager = ({
     actions: {
       handleStartAddNew,
       handleStartEdit,
+      handleDuplicateScenario,
       handleCancelEdit,
       handleSaveScenario,
       handleDeleteScenario,

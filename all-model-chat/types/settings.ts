@@ -1,6 +1,3 @@
-
-import { ThemeColors } from '../constants/themeConstants';
-
 export interface ModelOption {
   id: string;
   name: string;
@@ -21,6 +18,14 @@ export enum HarmBlockThreshold {
   BLOCK_ONLY_HIGH = 'BLOCK_ONLY_HIGH',
   BLOCK_MEDIUM_AND_ABOVE = 'BLOCK_MEDIUM_AND_ABOVE',
   BLOCK_LOW_AND_ABOVE = 'BLOCK_LOW_AND_ABOVE',
+}
+
+export enum MediaResolution {
+  MEDIA_RESOLUTION_UNSPECIFIED = 'MEDIA_RESOLUTION_UNSPECIFIED',
+  MEDIA_RESOLUTION_LOW = 'MEDIA_RESOLUTION_LOW',
+  MEDIA_RESOLUTION_MEDIUM = 'MEDIA_RESOLUTION_MEDIUM',
+  MEDIA_RESOLUTION_HIGH = 'MEDIA_RESOLUTION_HIGH',
+  MEDIA_RESOLUTION_ULTRA_HIGH = 'MEDIA_RESOLUTION_ULTRA_HIGH',
 }
 
 export interface SafetySetting {
@@ -44,13 +49,14 @@ export interface ChatSettings {
   systemInstruction: string;
   ttsVoice: string;
   thinkingBudget: number;
-  thinkingLevel?: 'LOW' | 'HIGH';
+  thinkingLevel?: 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
   lockedApiKey?: string | null;
   isGoogleSearchEnabled?: boolean;
   isCodeExecutionEnabled?: boolean;
   isUrlContextEnabled?: boolean;
   isDeepSearchEnabled?: boolean;
   safetySettings?: SafetySetting[];
+  mediaResolution?: MediaResolution;
 }
 
 export interface AppSettings extends ChatSettings {
@@ -75,4 +81,5 @@ export interface AppSettings extends ChatSettings {
  generateQuadImages?: boolean;
  autoFullscreenHtml?: boolean;
  showWelcomeSuggestions?: boolean;
+ isAudioCompressionEnabled: boolean;
 }

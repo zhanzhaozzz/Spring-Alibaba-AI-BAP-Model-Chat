@@ -1,6 +1,5 @@
-
-import { useEffect, useRef, useCallback } from 'react';
-import { AppSettings, UploadedFile } from '../types';
+import React, { useEffect, useRef, useCallback } from 'react';
+import { AppSettings, UploadedFile, ChatSettings } from '../types';
 import { useModels } from './useModels';
 import { useChatHistory } from './useChatHistory';
 import { useFileHandling } from './useFileHandling';
@@ -11,7 +10,6 @@ import { useChatScroll } from './useChatScroll';
 import { useAutoTitling } from './useAutoTitling';
 import { useSuggestions } from './useSuggestions';
 import { useChatState } from './useChatState';
-import { useChatClient } from './useChatClient';
 import { useChatActions } from './useChatActions';
 import { logService } from '../utils/appUtils';
 
@@ -40,19 +38,11 @@ export const useChat = (appSettings: AppSettings, setAppSettings: React.Dispatch
         fileDraftsRef
     } = chatState;
 
-    // 2. Chat Client Initialization
-    const { chat } = useChatClient({
-        activeSessionId,
-        savedSessions,
-        appSettings,
-        currentChatSettings,
-        messages,
-        aspectRatio,
-        imageSize
-    });
+    // Ref to track which API key was last used for a session (for sticky affinity)
+    const sessionKeyMapRef = useRef<Map<string, string>>(new Map());
 
-    // 3. Feature Hooks
-    const { apiModels, isModelsLoading, modelsLoadingError, setApiModels } = useModels(appSettings);
+    // 2. Feature Hooks
+    const { apiModels, isModelsLoading, modelsLoadingError, setApiModels } = useModels();
     
     const historyHandler = useChatHistory({ 
         appSettings, setSavedSessions, setSavedGroups, setActiveSessionId, 
@@ -96,13 +86,14 @@ export const useChat = (appSettings: AppSettings, setAppSettings: React.Dispatch
         aspectRatio, userScrolledUp, ttsMessageId, setTtsMessageId, activeSessionId, 
         setActiveSessionId, setCommandedInput, activeJobs, loadingSessionIds, 
         setLoadingSessionIds, updateAndPersistSessions, language, 
-        scrollContainerRef: scrollHandler.scrollContainerRef, chat 
+        scrollContainerRef: scrollHandler.scrollContainerRef,
+        sessionKeyMapRef // Pass ref to message handler
     });
 
-    useAutoTitling({ appSettings, savedSessions, updateAndPersistSessions, language, generatingTitleSessionIds, setGeneratingTitleSessionIds });
-    useSuggestions({ appSettings, activeChat, isLoading, updateAndPersistSessions, language });
+    useAutoTitling({ appSettings, savedSessions, updateAndPersistSessions, language, generatingTitleSessionIds, setGeneratingTitleSessionIds, sessionKeyMapRef });
+    useSuggestions({ appSettings, activeChat, isLoading, updateAndPersistSessions, language, sessionKeyMapRef });
 
-    // 4. Actions & Handlers
+    // 3. Actions & Handlers
     const { loadChatSession, startNewChat, handleDeleteChatHistorySession } = historyHandler;
 
     const chatActions = useChatActions({
@@ -123,7 +114,7 @@ export const useChat = (appSettings: AppSettings, setAppSettings: React.Dispatch
         userScrolledUp
     });
 
-    // 5. Effects
+    // 4. Effects
     useEffect(() => {
         const loadData = async () => await historyHandler.loadInitialData();
         loadData();
@@ -184,6 +175,22 @@ export const useChat = (appSettings: AppSettings, setAppSettings: React.Dispatch
 
     useEffect(() => { if (isSwitchingModel) { const timer = setTimeout(() => setIsSwitchingModel(false), 0); return () => clearTimeout(timer); } }, [isSwitchingModel]);
 
+    // Auto-set default aspect ratio for specific image models
+    const prevModelIdRef = useRef(currentChatSettings.modelId);
+    useEffect(() => {
+        if (prevModelIdRef.current !== currentChatSettings.modelId) {
+            const modelId = currentChatSettings.modelId;
+            const isBananaModel = modelId.includes('gemini-2.5-flash-image') || modelId.includes('gemini-3-pro-image');
+            
+            if (isBananaModel) {
+                setAspectRatio('Auto');
+            } else if (aspectRatio === 'Auto') {
+                setAspectRatio('1:1');
+            }
+            prevModelIdRef.current = modelId;
+        }
+    }, [currentChatSettings.modelId, aspectRatio, setAspectRatio]);
+
     return {
         // State
         messages,
@@ -231,6 +238,8 @@ export const useChat = (appSettings: AppSettings, setAppSettings: React.Dispatch
         startNewChat,
         handleDeleteChatHistorySession,
         handleRenameSession: historyHandler.handleRenameSession,
+        handleTogglePinSession: historyHandler.handleTogglePinSession,
+        handleDuplicateSession: historyHandler.handleDuplicateSession,
         handleAddNewGroup: historyHandler.handleAddNewGroup,
         handleDeleteGroup: historyHandler.handleDeleteGroup,
         handleRenameGroup: historyHandler.handleRenameGroup,
@@ -277,5 +286,6 @@ export const useChat = (appSettings: AppSettings, setAppSettings: React.Dispatch
         toggleDeepSearch: chatActions.toggleDeepSearch,
         handleTogglePinCurrentSession: chatActions.handleTogglePinCurrentSession,
         handleUpdateMessageContent: chatActions.handleUpdateMessageContent,
+        handleUpdateMessageFile: chatActions.handleUpdateMessageFile,
     };
 };

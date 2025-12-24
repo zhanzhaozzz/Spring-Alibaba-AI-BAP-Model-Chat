@@ -36,6 +36,7 @@ export const SUPPORTED_TEXT_MIME_TYPES = [
 ];
 export const SUPPORTED_AUDIO_MIME_TYPES = [
   'audio/mpeg', 
+  'audio/mp3', // Added for broader compatibility
   'audio/ogg',
   'audio/wav',
   'audio/aac',
@@ -61,6 +62,13 @@ export const SUPPORTED_VIDEO_MIME_TYPES = [
     'video/3gpp',
 ];
 
+export const SUPPORTED_SPREADSHEET_MIME_TYPES = [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'text/csv',
+];
+
 export const TEXT_BASED_EXTENSIONS = [
   '.txt', '.md', '.markdown', '.json', '.xml', '.csv', '.tsv', '.log', '.rtf',
   '.js', '.ts', '.jsx', '.tsx', '.html', '.htm', '.css', '.scss', '.less',
@@ -76,4 +84,59 @@ export const ALL_SUPPORTED_MIME_TYPES = [
     ...SUPPORTED_AUDIO_MIME_TYPES,
     ...SUPPORTED_PDF_MIME_TYPES,
     ...SUPPORTED_VIDEO_MIME_TYPES,
+    ...SUPPORTED_SPREADSHEET_MIME_TYPES,
 ];
+
+export const EXTENSION_TO_MIME: Record<string, string> = {
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.avi': 'video/avi',
+    '.wmv': 'video/x-ms-wmv',
+    '.mpg': 'video/mpeg',
+    '.mpeg': 'video/mpeg',
+    '.webm': 'video/webm',
+    '.flv': 'video/x-flv',
+    '.3gp': 'video/3gpp',
+    '.pdf': 'application/pdf',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.aac': 'audio/aac',
+    '.ogg': 'audio/ogg',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+};
+
+// Centralized map for generating file extensions from MIME types
+// Used for file generation downloads and stream processing
+export const MIME_TO_EXTENSION_MAP: Record<string, string> = {
+    'application/pdf': '.pdf',
+    'text/csv': '.csv',
+    'text/plain': '.txt',
+    'application/json': '.json',
+    'text/html': '.html',
+    'text/xml': '.xml',
+    'text/markdown': '.md',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+    'application/vnd.ms-excel': '.xls',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+    'application/msword': '.doc',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+    'application/vnd.ms-powerpoint': '.ppt',
+    'application/zip': '.zip',
+    'application/x-zip-compressed': '.zip',
+    'application/x-7z-compressed': '.7z',
+    'application/x-tar': '.tar',
+    'application/gzip': '.gz',
+    'application/octet-stream': '.bin',
+    'text/x-python': '.py',
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+    'audio/mpeg': '.mp3',
+    'audio/wav': '.wav',
+    'video/mp4': '.mp4',
+};

@@ -1,8 +1,8 @@
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { AppSettings, ChatGroup, SavedChatSession, ChatMessage } from './types';
-import { CANVAS_SYSTEM_PROMPT, DEFAULT_SYSTEM_INSTRUCTION, DEFAULT_APP_SETTINGS, THINKING_BUDGET_RANGES } from './constants/appConstants';
+import { AppSettings, ChatGroup, SavedChatSession, ChatMessage, SideViewContent } from './types';
+import { CANVAS_SYSTEM_PROMPT, DEFAULT_SYSTEM_INSTRUCTION, DEFAULT_APP_SETTINGS } from './constants/appConstants';
 import { useAppSettings } from './hooks/useAppSettings';
 import { useChat } from './hooks/useChat';
 import { useAppUI } from './hooks/useAppUI';
@@ -38,7 +38,7 @@ const App: React.FC = () => {
       selectedFiles, setSelectedFiles, editingMessageId,
       appFileError, setAppFileError, isAppProcessingFile,
       savedSessions, savedGroups, activeSessionId,
-      apiModels, isModelsLoading, modelsLoadingError, isSwitchingModel, setApiModels,
+      apiModels, isSwitchingModel, setApiModels,
       scrollContainerRef, setScrollContainerRef, savedScenarios, isAppDraggingOver, isProcessingDrop,
       aspectRatio, setAspectRatio, ttsMessageId,
       loadChatSession, startNewChat, handleClearCurrentChat,
@@ -46,7 +46,7 @@ const App: React.FC = () => {
       handleStopGenerating, handleEditMessage, handleCancelEdit,
       handleDeleteMessage, handleRetryMessage, handleRetryLastTurn,
       handleEditLastUserMessage, handleDeleteChatHistorySession, handleRenameSession,
-      handleTogglePinSession, handleTogglePinCurrentSession, handleAddNewGroup,
+      handleTogglePinSession, handleDuplicateSession, handleTogglePinCurrentSession, handleAddNewGroup,
       handleDeleteGroup, handleRenameGroup, handleMoveSessionToGroup,
       handleToggleGroupExpansion, clearCacheAndReload, clearAllHistory,
       handleSaveAllScenarios, handleLoadPreloadedScenario,
@@ -57,7 +57,7 @@ const App: React.FC = () => {
       scrollToPrevTurn, scrollToNextTurn, toggleGoogleSearch,
       toggleCodeExecution, toggleUrlContext, toggleDeepSearch,
       updateAndPersistSessions, updateAndPersistGroups,
-      imageSize, setImageSize, handleUpdateMessageContent
+      imageSize, setImageSize, handleUpdateMessageContent, handleUpdateMessageFile
   } = chatState;
 
   const {
@@ -68,6 +68,32 @@ const App: React.FC = () => {
     handleTouchStart, handleTouchEnd,
   } = useAppUI();
   
+  // Side Panel State
+  const [sidePanelContent, setSidePanelContent] = useState<SideViewContent | null>(null);
+  
+  const handleOpenSidePanel = useCallback((content: SideViewContent) => {
+      setSidePanelContent(content);
+      // Auto-collapse sidebar on smaller screens if opening side panel
+      if (window.innerWidth < 1280) {
+          setIsHistorySidebarOpen(false);
+      }
+  }, [setIsHistorySidebarOpen]);
+
+  const handleCloseSidePanel = useCallback(() => {
+      setSidePanelContent(null);
+  }, []);
+
+  // Close SidePanel on window resize if width is too narrow
+  useEffect(() => {
+      const handleResize = () => {
+          if (window.innerWidth < 768) {
+              setSidePanelContent(null);
+          }
+      };
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const { isPipSupported, isPipActive, togglePip, pipContainer, pipWindow } = usePictureInPicture(setIsHistorySidebarOpen);
 
   // Sync styles to PiP window when theme changes
@@ -127,23 +153,18 @@ const App: React.FC = () => {
     if (activeSessionId && setCurrentChatSettings) {
       setCurrentChatSettings(prevChatSettings => ({
         ...prevChatSettings,
+        modelId: newSettings.modelId, // Sync model change to active session
         temperature: newSettings.temperature,
         topP: newSettings.topP,
         systemInstruction: newSettings.systemInstruction,
         showThoughts: newSettings.showThoughts,
         ttsVoice: newSettings.ttsVoice,
         thinkingBudget: newSettings.thinkingBudget,
+        thinkingLevel: newSettings.thinkingLevel,
         lockedApiKey: null,
+        mediaResolution: newSettings.mediaResolution,
       }));
     }
-  };
-
-  const handleSetDefaultModel = (modelId: string) => {
-    logService.info(`Setting new default model: ${modelId}`);
-    const newThinkingBudget = THINKING_BUDGET_RANGES[modelId]
-      ? THINKING_BUDGET_RANGES[modelId].max
-      : DEFAULT_APP_SETTINGS.thinkingBudget;
-    setAppSettings(prev => ({ ...prev, modelId, thinkingBudget: newThinkingBudget }));
   };
 
   const handleLoadCanvasPromptAndSave = () => {
@@ -188,8 +209,6 @@ const App: React.FC = () => {
 
   const getCurrentModelDisplayName = () => {
     const modelIdToDisplay = currentChatSettings.modelId || appSettings.modelId;
-    if (isModelsLoading && !modelIdToDisplay && apiModels.length === 0) return t('loading');
-    if (isModelsLoading && modelIdToDisplay && !apiModels.find(m => m.id === modelIdToDisplay)) return t('appVerifyingModel');
     if (isSwitchingModel) return t('appSwitchingModel');
     const model = apiModels.find(m => m.id === modelIdToDisplay);
     if (model) return model.name;
@@ -197,7 +216,7 @@ const App: React.FC = () => {
         let n = modelIdToDisplay.split('/').pop()?.replace('gemini-','Gemini ') || modelIdToDisplay; 
         return n.split('-').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ').replace(' Preview ',' Preview ');
     }
-    return apiModels.length === 0 && !isModelsLoading ? t('appNoModelsAvailable') : t('appNoModelSelected');
+    return apiModels.length === 0 ? t('appNoModelsAvailable') : t('appNoModelSelected');
   };
 
   const isCanvasPromptActive = currentChatSettings.systemInstruction === CANVAS_SYSTEM_PROMPT;
@@ -218,6 +237,7 @@ const App: React.FC = () => {
     onDeleteSession: handleDeleteChatHistorySession,
     onRenameSession: handleRenameSession,
     onTogglePinSession: handleTogglePinSession,
+    onDuplicateSession: handleDuplicateSession,
     onOpenExportModal: () => setIsExportModalOpen(true),
     onAddNewGroup: handleAddNewGroup,
     onDeleteGroup: handleDeleteGroup,
@@ -252,16 +272,13 @@ const App: React.FC = () => {
     availableModels: apiModels,
     selectedModelId: currentChatSettings.modelId || appSettings.modelId,
     onSelectModel: handleSelectModelInHeader,
-    isModelsLoading,
     isSwitchingModel,
     isHistorySidebarOpen,
     onLoadCanvasPrompt: handleLoadCanvasPromptAndSave,
     isCanvasPromptActive,
     isKeyLocked: !!currentChatSettings.lockedApiKey,
-    defaultModelId: appSettings.modelId,
-    onSetDefaultModel: handleSetDefaultModel,
     themeId: currentTheme.id,
-    modelsLoadingError,
+    modelsLoadingError: null,
     messages,
     scrollContainerRef,
     setScrollContainerRef, // Pass the new ref callback
@@ -270,6 +287,7 @@ const App: React.FC = () => {
     onDeleteMessage: handleDeleteMessage,
     onRetryMessage: handleRetryMessage,
     onEditMessageContent: setEditingContentMessage,
+    onUpdateMessageFile: handleUpdateMessageFile, // Added this prop
     showThoughts: currentChatSettings.showThoughts,
     themeColors: currentTheme.colors,
     baseFontSize: appSettings.baseFontSize,
@@ -330,17 +348,62 @@ const App: React.FC = () => {
     onToggleQuadImages: () => setAppSettings(prev => ({ ...prev, generateQuadImages: !prev.generateQuadImages })),
     onSetThinkingLevel: handleSetThinkingLevel,
     setCurrentChatSettings,
+    onOpenSidePanel: handleOpenSidePanel,
     t,
   };
+
+  // Merge active chat settings into app settings for the modal so controls reflect current session
+  const settingsForModal = useMemo(() => {
+    if (activeSessionId && currentChatSettings) {
+        // Explicitly pick only the settings that should be overridable by the session
+        // This prevents dirty DB data from overwriting global UI settings
+        const {
+            modelId,
+            temperature,
+            topP,
+            showThoughts,
+            systemInstruction,
+            ttsVoice,
+            thinkingBudget,
+            thinkingLevel,
+            lockedApiKey,
+            isGoogleSearchEnabled,
+            isCodeExecutionEnabled,
+            isUrlContextEnabled,
+            isDeepSearchEnabled,
+            safetySettings,
+            mediaResolution
+        } = currentChatSettings;
+
+        return { 
+            ...appSettings,
+            // Only override these specific keys from the session
+            modelId,
+            temperature,
+            topP,
+            showThoughts,
+            systemInstruction,
+            ttsVoice,
+            thinkingBudget,
+            thinkingLevel,
+            lockedApiKey,
+            isGoogleSearchEnabled,
+            isCodeExecutionEnabled,
+            isUrlContextEnabled,
+            isDeepSearchEnabled,
+            safetySettings,
+            mediaResolution
+        };
+    }
+    return appSettings;
+  }, [appSettings, currentChatSettings, activeSessionId]);
 
   const appModalsProps = {
     isSettingsModalOpen,
     setIsSettingsModalOpen,
-    appSettings,
+    appSettings: settingsForModal, // Use merged settings
     availableModels: apiModels,
     handleSaveSettings,
-    isModelsLoading,
-    modelsLoadingError,
     clearCacheAndReload,
     clearAllHistory,
     handleInstallPwa,
@@ -389,6 +452,9 @@ const App: React.FC = () => {
                             appModalsProps={appModalsProps}
                             isHistorySidebarOpen={isHistorySidebarOpen}
                             setIsHistorySidebarOpen={setIsHistorySidebarOpen}
+                            sidePanelContent={sidePanelContent} // NEW
+                            onCloseSidePanel={handleCloseSidePanel} // NEW
+                            themeId={currentTheme.id}
                         />
                         <EditMessageModal
                             isOpen={!!editingContentMessage}
@@ -411,6 +477,9 @@ const App: React.FC = () => {
                 appModalsProps={appModalsProps}
                 isHistorySidebarOpen={isHistorySidebarOpen}
                 setIsHistorySidebarOpen={setIsHistorySidebarOpen}
+                sidePanelContent={sidePanelContent} // NEW
+                onCloseSidePanel={handleCloseSidePanel} // NEW
+                themeId={currentTheme.id}
             />
             <EditMessageModal
                 isOpen={!!editingContentMessage}

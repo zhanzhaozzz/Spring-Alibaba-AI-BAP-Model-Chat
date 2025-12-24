@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef } from 'react';
 import { ChevronDown, Check, Info, Type, CloudUpload } from 'lucide-react';
 import { translations } from '../../utils/appUtils';
@@ -36,11 +37,31 @@ interface AppearanceSectionProps {
   setAutoFullscreenHtml: (value: boolean) => void;
   showWelcomeSuggestions: boolean;
   setShowWelcomeSuggestions: (value: boolean) => void;
+  isAudioCompressionEnabled: boolean;
+  setIsAudioCompressionEnabled: (value: boolean) => void;
   // Updated prop for file strategy
   filesApiConfig: FilesApiConfig;
   setFilesApiConfig: (value: FilesApiConfig) => void;
   t: (key: keyof typeof translations) => string;
 }
+
+const ToggleItem = ({ label, checked, onChange, tooltip, small = false }: { label: string, checked: boolean, onChange: (v: boolean) => void, tooltip?: string, small?: boolean }) => (
+    <div className={`flex items-center justify-between py-${small ? '2' : '3'} transition-colors`}>
+        <div className="flex items-center pr-4 flex-1 min-w-0">
+            <span className={`${small ? 'text-xs text-[var(--theme-text-secondary)]' : 'text-sm font-medium text-[var(--theme-text-primary)]'}`}>
+                {label}
+            </span>
+            {tooltip && (
+                <Tooltip text={tooltip}>
+                    <Info size={14} className="text-[var(--theme-text-tertiary)] cursor-help" strokeWidth={1.5} />
+                </Tooltip>
+            )}
+        </div>
+        <div className="flex-shrink-0">
+          <Toggle checked={checked} onChange={onChange} />
+        </div>
+    </div>
+);
 
 export const AppearanceSection: React.FC<AppearanceSectionProps> = ({
   themeId, setThemeId,
@@ -57,6 +78,7 @@ export const AppearanceSection: React.FC<AppearanceSectionProps> = ({
   isAutoSendOnSuggestionClick, setIsAutoSendOnSuggestionClick,
   autoFullscreenHtml, setAutoFullscreenHtml,
   showWelcomeSuggestions, setShowWelcomeSuggestions,
+  isAudioCompressionEnabled, setIsAudioCompressionEnabled,
   filesApiConfig, setFilesApiConfig,
   t,
 }) => {
@@ -78,24 +100,6 @@ export const AppearanceSection: React.FC<AppearanceSectionProps> = ({
   ];
 
   const currentLanguageDisplay = languageOptions.find(o => o.id === language)?.label;
-
-  const ToggleItem = ({ label, checked, onChange, tooltip, small = false }: { label: string, checked: boolean, onChange: (v: boolean) => void, tooltip?: string, small?: boolean }) => (
-      <div className={`flex items-center justify-between py-${small ? '2' : '3'} transition-colors`}>
-          <div className="flex items-center pr-4 flex-1 min-w-0">
-              <span className={`${small ? 'text-xs text-[var(--theme-text-secondary)]' : 'text-sm font-medium text-[var(--theme-text-primary)]'}`}>
-                  {label}
-              </span>
-              {tooltip && (
-                  <Tooltip text={tooltip}>
-                      <Info size={14} className="text-[var(--theme-text-tertiary)] cursor-help" strokeWidth={1.5} />
-                  </Tooltip>
-              )}
-          </div>
-          <div className="flex-shrink-0">
-            <Toggle id={label} checked={checked} onChange={onChange} />
-          </div>
-      </div>
-  );
 
   const updateFileConfig = (key: keyof FilesApiConfig, val: boolean) => {
       setFilesApiConfig({ ...filesApiConfig, [key]: val });
@@ -228,6 +232,7 @@ export const AppearanceSection: React.FC<AppearanceSectionProps> = ({
               <ToggleItem label={t('settings_autoFullscreenHtml_label')} checked={autoFullscreenHtml} onChange={setAutoFullscreenHtml} tooltip={t('settings_autoFullscreenHtml_tooltip')} />
               <ToggleItem label={t('settings_enableMermaidRendering_label')} checked={isMermaidRenderingEnabled} onChange={setIsMermaidRenderingEnabled} tooltip={t('settings_enableMermaidRendering_tooltip')} />
               <ToggleItem label={t('settings_enableGraphvizRendering_label')} checked={isGraphvizRenderingEnabled} onChange={setIsGraphvizRenderingEnabled} tooltip={t('settings_enableGraphvizRendering_tooltip')} />
+              <ToggleItem label={t('settings_audioCompression_label')} checked={isAudioCompressionEnabled} onChange={setIsAudioCompressionEnabled} tooltip={t('settings_audioCompression_tooltip')} />
           </div>
       </div>
     </div>

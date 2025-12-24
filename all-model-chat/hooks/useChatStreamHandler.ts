@@ -1,9 +1,8 @@
-
-import { Dispatch, SetStateAction, useCallback } from 'react';
-import { AppSettings, ChatMessage, SavedChatSession, ChatSettings as IndividualChatSettings } from '../types';
-import { Part, UsageMetadata, Chat } from '@google/genai';
+import React, { Dispatch, SetStateAction, useCallback } from 'react';
+import { AppSettings, ChatMessage, SavedChatSession, ChatSettings as IndividualChatSettings, UploadedFile } from '../types';
+import { Part, UsageMetadata } from '@google/genai';
 import { useApiErrorHandler } from './useApiErrorHandler';
-import { generateUniqueId, logService, showNotification, getTranslator, base64ToBlobUrl } from '../utils/appUtils';
+import { generateUniqueId, logService, showNotification, getTranslator, base64ToBlobUrl, getExtensionFromMimeType } from '../utils/appUtils';
 import { APP_LOGO_SVG_DATA_URI } from '../constants/appConstants';
 
 type SessionsUpdater = (updater: (prev: SavedChatSession[]) => SavedChatSession[], options?: { persist?: boolean }) => void;
@@ -13,7 +12,6 @@ interface ChatStreamHandlerProps {
     updateAndPersistSessions: SessionsUpdater;
     setLoadingSessionIds: Dispatch<SetStateAction<Set<string>>>;
     activeJobs: React.MutableRefObject<Map<string, AbortController>>;
-    chat: Chat | null;
 }
 
 const isToolMessage = (msg: ChatMessage): boolean => {
@@ -25,6 +23,33 @@ const isToolMessage = (msg: ChatMessage): boolean => {
     return (content.startsWith('```') && content.endsWith('```')) ||
            content.startsWith('<div class="tool-result');
 };
+
+const SUPPORTED_GENERATED_MIME_TYPES = new Set([
+    // Images
+    'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+    // Docs
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+    'text/csv',
+    'text/plain',
+    'application/json',
+    'text/html',
+    'text/xml',
+    'text/markdown',
+    'text/x-python',
+    // Media
+    'audio/wav',
+    'audio/mp3',
+    'video/mp4',
+    // Other
+    'application/zip',
+    'application/x-zip-compressed',
+    'application/x-7z-compressed',
+    'application/octet-stream'
+]);
 
 export const useChatStreamHandler = ({
     appSettings,
@@ -66,10 +91,19 @@ export const useChatStreamHandler = ({
 
             // Record Token Usage Statistics
             if (usageMetadata) {
+                let promptTokens = usageMetadata.promptTokenCount || 0;
+                let completionTokens = usageMetadata.candidatesTokenCount || 0;
+                const totalTokens = usageMetadata.totalTokenCount || 0;
+
+                // Fallback: If candidatesTokenCount is missing (0/undefined) but we have total and prompt, calculate it
+                if (!completionTokens && totalTokens > 0 && promptTokens > 0) {
+                    completionTokens = totalTokens - promptTokens;
+                }
+
                 logService.recordTokenUsage(
                     currentChatSettings.modelId,
-                    usageMetadata.promptTokenCount || 0,
-                    usageMetadata.candidatesTokenCount || 0
+                    promptTokens,
+                    completionTokens
                 );
             }
 
@@ -161,6 +195,7 @@ export const useChatStreamHandler = ({
 
         const streamOnPart = (part: Part) => {
             const anyPart = part as any;
+            const now = Date.now();
             let isFirstContentPart = false;
             
             const hasMeaningfulContent = 
@@ -206,16 +241,36 @@ export const useChatStreamHandler = ({
                 const createNewMessage = (content: string): ChatMessage => {
                     const id = generateUniqueId();
                     newModelMessageIds.add(id);
-                    return { id, role: 'model', content, timestamp: new Date(), isLoading: true, generationStartTime: generationStartTime };
+                    return { 
+                        id, 
+                        role: 'model', 
+                        content, 
+                        timestamp: new Date(), 
+                        isLoading: true, 
+                        generationStartTime: generationStartTime,
+                        firstTokenTimeMs: now - generationStartTime.getTime() // TTFT for new messages
+                    };
                 };
         
-                if (anyPart.text) {
-                    if (lastMessage && lastMessage.role === 'model' && lastMessage.isLoading && !isToolMessage(lastMessage)) {
-                        messages[lastMessageIndex] = { ...lastMessage, content: lastMessage.content + anyPart.text };
-                    } else {
-                        messages.push(createNewMessage(anyPart.text));
+                // Update existing message if possible, and capture TTFT if missing
+                if (lastMessage && lastMessage.role === 'model' && lastMessage.isLoading && !isToolMessage(lastMessage)) {
+                    const updates: Partial<ChatMessage> = {};
+                    if (anyPart.text) {
+                        updates.content = lastMessage.content + anyPart.text;
                     }
-                } else if (anyPart.executableCode) {
+                    if (lastMessage.firstTokenTimeMs === undefined) {
+                        updates.firstTokenTimeMs = now - generationStartTime.getTime();
+                    }
+                    
+                    if (anyPart.text || Object.keys(updates).length > 0) {
+                        messages[lastMessageIndex] = { ...lastMessage, ...updates };
+                    }
+                } else if (anyPart.text) {
+                    messages.push(createNewMessage(anyPart.text));
+                }
+
+                // Handle other parts
+                if (anyPart.executableCode) {
                     const codePart = anyPart.executableCode as { language: string, code: string };
                     const toolContent = `\`\`\`${codePart.language.toLowerCase() || 'python'}\n${codePart.code}\n\`\`\``;
                     messages.push(createNewMessage(toolContent));
@@ -233,19 +288,28 @@ export const useChatStreamHandler = ({
                     messages.push(createNewMessage(toolContent));
                 } else if (anyPart.inlineData) {
                     const { mimeType, data } = anyPart.inlineData;
-                    if (mimeType.startsWith('image/') || mimeType === 'application/pdf') {
+                    
+                    const isSupportedFile = 
+                        mimeType.startsWith('image/') || 
+                        mimeType.startsWith('audio/') ||
+                        mimeType.startsWith('video/') ||
+                        SUPPORTED_GENERATED_MIME_TYPES.has(mimeType);
+
+                    if (isSupportedFile) {
                         const dataUrl = base64ToBlobUrl(data, mimeType);
                         
                         let fileName = 'Generated File';
-                        if (mimeType === 'application/pdf') {
-                            fileName = `generated_output_${generateUniqueId().slice(-4)}.pdf`;
-                        } else {
-                            fileName = 'Generated Image';
+                        // Use centralized utility for extension resolution
+                        const ext = getExtensionFromMimeType(mimeType);
+                        if (ext) {
+                            fileName = `generated_file_${generateUniqueId().slice(-4)}${ext}`;
+                        } else if (mimeType.startsWith('image/')) {
+                            fileName = `generated-image-${generateUniqueId().slice(-4)}.png`;
                         }
 
                         const newFile: UploadedFile = {
                             id: generateUniqueId(),
-                            name: fileName,
+                            name,
                             type: mimeType,
                             size: data.length,
                             dataUrl: dataUrl,
@@ -282,6 +346,7 @@ export const useChatStreamHandler = ({
         
 
         const onThoughtChunk = (thoughtChunk: string) => {
+            const now = Date.now();
             updateAndPersistSessions(prev => {
                 const sessionIndex = prev.findIndex(s => s.id === currentSessionId);
                 if (sessionIndex === -1) return prev;
@@ -298,11 +363,13 @@ export const useChatStreamHandler = ({
                     const lastMessage = messages[lastMessageIndex];
                     // Identify message by matching start time
                     if (lastMessage.role === 'model' && lastMessage.isLoading && lastMessage.generationStartTime && lastMessage.generationStartTime.getTime() === generationStartTime.getTime()) {
-                        const updatedMessage = {
-                            ...lastMessage,
+                        const updates: Partial<ChatMessage> = {
                             thoughts: (lastMessage.thoughts || '') + thoughtChunk,
                         };
-                        messages[lastMessageIndex] = updatedMessage;
+                        if (lastMessage.firstTokenTimeMs === undefined) {
+                            updates.firstTokenTimeMs = now - generationStartTime.getTime();
+                        }
+                        messages[lastMessageIndex] = { ...lastMessage, ...updates };
                     }
                 }
                 

@@ -1,5 +1,5 @@
 
-import { ChatSettings } from './settings';
+import { ChatSettings, MediaResolution } from './settings';
 
 export interface VideoMetadata {
   startOffset?: string;
@@ -26,6 +26,13 @@ export interface UploadedFile {
   abortController?: AbortController; // Added for cancelling uploads
   uploadSpeed?: string; // Added for upload speed display
   videoMetadata?: VideoMetadata; // Added for video clipping
+  mediaResolution?: MediaResolution; // Added for Gemini 3 per-part resolution
+}
+
+export interface InputCommand {
+  text: string;
+  id: number;
+  mode?: 'replace' | 'append' | 'quote';
 }
 
 export interface ChatMessage {
@@ -39,6 +46,7 @@ export interface ChatMessage {
   generationStartTime?: Date;
   generationEndTime?: Date;
   thinkingTimeMs?: number;
+  firstTokenTimeMs?: number; // Time to First Token (TTFT) in ms
   promptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
@@ -66,6 +74,7 @@ export interface ContentPart {
   };
   videoMetadata?: VideoMetadata;
   thoughtSignature?: string; // Added to pass back to API
+  mediaResolution?: { level: string }; // Added for Gemini 3 per-part resolution
 }
 
 export interface ChatGroup {
@@ -105,6 +114,13 @@ export interface CommandInfo {
     icon?: string;
 }
 
+export interface SideViewContent {
+    type: 'html' | 'mermaid' | 'graphviz' | 'svg';
+    content: string;
+    language?: string;
+    title?: string;
+}
+
 // Toolbar Props Definition
 export interface ChatInputToolbarProps {
   isImagenModel: boolean;
@@ -130,6 +146,8 @@ export interface ChatInputToolbarProps {
   t: (key: string) => string;
   generateQuadImages?: boolean;
   onToggleQuadImages?: () => void;
+  supportedAspectRatios?: string[];
+  supportedImageSizes?: string[]; // Added for configuring supported resolutions
 }
 
 export interface ChatInputActionsProps {
@@ -161,4 +179,5 @@ export interface ChatInputActionsProps {
   inputText: string;
   onToggleFullscreen?: () => void;
   isFullscreen?: boolean;
+  onCountTokens: () => void;
 }

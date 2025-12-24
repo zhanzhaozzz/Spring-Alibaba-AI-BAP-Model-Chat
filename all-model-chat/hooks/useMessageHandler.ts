@@ -1,11 +1,10 @@
-import { Dispatch, SetStateAction } from 'react';
-import { AppSettings, ChatMessage, UploadedFile, ChatSettings as IndividualChatSettings, SavedChatSession } from '../types';
+import React, { Dispatch, SetStateAction } from 'react';
+import { AppSettings, ChatMessage, UploadedFile, ChatSettings as IndividualChatSettings, SavedChatSession, InputCommand } from '../types';
 import { useMessageSender } from './useMessageSender';
 import { useMessageActions } from './useMessageActions';
 import { useTextToSpeechHandler } from './useTextToSpeechHandler';
-import { Chat } from '@google/genai';
 
-type CommandedInputSetter = Dispatch<SetStateAction<{ text: string; id: number; } | null>>;
+type CommandedInputSetter = Dispatch<SetStateAction<InputCommand | null>>;
 type SessionsUpdater = (updater: (prev: SavedChatSession[]) => SavedChatSession[]) => void;
 
 interface MessageHandlerProps {
@@ -30,7 +29,8 @@ interface MessageHandlerProps {
     setLoadingSessionIds: Dispatch<SetStateAction<Set<string>>>;
     updateAndPersistSessions: SessionsUpdater;
     scrollContainerRef: React.RefObject<HTMLDivElement>;
-    chat: Chat | null;
+    sessionKeyMapRef: React.MutableRefObject<Map<string, string>>;
+    language: 'en' | 'zh';
 }
 
 export const useMessageHandler = (props: MessageHandlerProps) => {

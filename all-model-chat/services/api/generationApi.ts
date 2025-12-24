@@ -4,8 +4,8 @@ import { Part, Type } from "@google/genai";
 import { logService } from "../logService";
 import { fileToBase64 } from "../../utils/appUtils";
 
-export const generateImagesApi = async (apiKey: string, modelId: string, prompt: string, aspectRatio: string, abortSignal: AbortSignal): Promise<string[]> => {
-    logService.info(`Generating image with model ${modelId}`, { prompt, aspectRatio });
+export const generateImagesApi = async (apiKey: string, modelId: string, prompt: string, aspectRatio: string, imageSize: string | undefined, abortSignal: AbortSignal): Promise<string[]> => {
+    logService.info(`Generating image with model ${modelId}`, { prompt, aspectRatio, imageSize });
     
     if (!prompt.trim()) {
         throw new Error("Image generation prompt cannot be empty.");
@@ -19,10 +19,20 @@ export const generateImagesApi = async (apiKey: string, modelId: string, prompt:
 
     try {
         const ai = await getConfiguredApiClient(apiKey);
+        const config: any = { 
+            numberOfImages: 1, 
+            outputMimeType: 'image/png', 
+            aspectRatio: aspectRatio 
+        };
+
+        if (imageSize) {
+            config.imageSize = imageSize;
+        }
+
         const response = await ai.models.generateImages({
             model: modelId,
             prompt: prompt,
-            config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: aspectRatio },
+            config: config,
         });
 
         if (abortSignal.aborted) {
@@ -162,9 +172,9 @@ export const transcribeAudioApi = async (apiKey: string, audioFile: File, modelI
     }
 };
 
-export const translateTextApi = async (apiKey: string, text: string): Promise<string> => {
-    logService.info(`Translating text...`);
-    const prompt = `Translate the following text to English. Only return the translated text, without any additional explanation or formatting.\n\nText to translate:\n"""\n${text}\n"""`;
+export const translateTextApi = async (apiKey: string, text: string, targetLanguage: string = 'English'): Promise<string> => {
+    logService.info(`Translating text to ${targetLanguage}...`);
+    const prompt = `Translate the following text to ${targetLanguage}. Only return the translated text, without any additional explanation or formatting.\n\nText to translate:\n"""\n${text}\n"""`;
 
     try {
         const ai = await getConfiguredApiClient(apiKey);
@@ -302,6 +312,21 @@ export const generateTitleApi = async (apiKey: string, userContent: string, mode
         }
     } catch (error) {
         logService.error("Error during title generation:", error);
+        throw error;
+    }
+};
+
+export const countTokensApi = async (apiKey: string, modelId: string, parts: Part[]): Promise<number> => {
+    logService.info(`Counting tokens for model ${modelId}...`);
+    try {
+        const ai = await getConfiguredApiClient(apiKey);
+        const response = await ai.models.countTokens({
+            model: modelId,
+            contents: [{ role: 'user', parts }]
+        });
+        return response.totalTokens || 0;
+    } catch (error) {
+        logService.error("Error counting tokens:", error);
         throw error;
     }
 };

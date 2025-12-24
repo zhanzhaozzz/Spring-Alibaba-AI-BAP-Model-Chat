@@ -1,7 +1,16 @@
 
-import { ChatMessage, ContentPart, UploadedFile, ChatHistoryItem, SavedChatSession, ModelOption } from '../types';
-import { SUPPORTED_IMAGE_MIME_TYPES, SUPPORTED_TEXT_MIME_TYPES, TEXT_BASED_EXTENSIONS } from '../constants/fileConstants';
+import { ChatMessage, ContentPart, UploadedFile, ChatHistoryItem, SavedChatSession, ModelOption, ChatSettings } from '../types';
+import { SUPPORTED_IMAGE_MIME_TYPES, SUPPORTED_TEXT_MIME_TYPES, TEXT_BASED_EXTENSIONS, MIME_TO_EXTENSION_MAP } from '../constants/fileConstants';
 import { logService } from '../services/logService';
+import { TAB_CYCLE_MODELS, STATIC_TTS_MODELS, STATIC_IMAGEN_MODELS, GEMINI_3_RO_MODELS } from '../constants/appConstants';
+import { MediaResolution } from '../types/settings';
+
+export const formatDuration = (seconds: number): string => {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+};
 
 export const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -48,6 +57,18 @@ export const base64ToBlobUrl = (base64: string, mimeType: string): string => {
     return URL.createObjectURL(blob);
 };
 
+export const getExtensionFromMimeType = (mimeType: string): string => {
+    if (MIME_TO_EXTENSION_MAP[mimeType]) return MIME_TO_EXTENSION_MAP[mimeType];
+    
+    // Fallback logic for generic types (image/xyz -> .xyz)
+    if (mimeType.startsWith('image/') || mimeType.startsWith('audio/') || mimeType.startsWith('video/')) {
+        const subtype = mimeType.split('/')[1];
+        if (subtype) return `.${subtype}`;
+    }
+    
+    return '.file';
+};
+
 export const formatFileSize = (sizeInBytes: number): string => {
     if (!sizeInBytes) return '';
     if (sizeInBytes < 1024) return `${Math.round(sizeInBytes)} B`;
@@ -58,6 +79,20 @@ export const formatFileSize = (sizeInBytes: number): string => {
 };
 
 export const generateUniqueId = () => `chat-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+export const createNewSession = (
+    settings: ChatSettings,
+    messages: ChatMessage[] = [],
+    title: string = "New Chat",
+    groupId: string | null = null
+): SavedChatSession => ({
+    id: generateUniqueId(),
+    title,
+    messages,
+    settings,
+    timestamp: Date.now(),
+    groupId,
+});
 
 export const generateSessionTitle = (messages: ChatMessage[]): string => {
     const firstUserMessage = messages.find(msg => msg.role === 'user' && msg.content.trim() !== '');
@@ -113,12 +148,17 @@ export const parseThoughtProcess = (thoughts: string | undefined) => {
 
 export const buildContentParts = async (
   text: string, 
-  files: UploadedFile[] | undefined
+  files: UploadedFile[] | undefined,
+  modelId?: string,
+  mediaResolution?: MediaResolution
 ): Promise<{
   contentParts: ContentPart[];
   enrichedFiles: UploadedFile[];
 }> => {
   const filesToProcess = files || [];
+  
+  // Check if model supports per-part resolution (Gemini 3 family)
+  const isGemini3 = modelId && isGemini3Model(modelId);
   
   const processedResults = await Promise.all(filesToProcess.map(async (file) => {
     const newFile = { ...file };
@@ -201,6 +241,18 @@ export const buildContentParts = async (
             part.videoMetadata.fps = file.videoMetadata.fps;
         }
     }
+
+    // Inject Per-Part Media Resolution (Gemini 3 feature)
+    // Only apply to supported media types (images, videos, pdfs) not text/code
+    // Prioritize file-level resolution, then global resolution
+    const effectiveResolution = file.mediaResolution || mediaResolution;
+    
+    if (part && isGemini3 && effectiveResolution && effectiveResolution !== MediaResolution.MEDIA_RESOLUTION_UNSPECIFIED && !isTextLike && !isYoutube) {
+        // Only apply if it has inlineData or fileData
+        if (part.inlineData || part.fileData) {
+            part.mediaResolution = { level: effectiveResolution };
+        }
+    }
     
     return { file: newFile, part };
   }));
@@ -231,9 +283,6 @@ export const createChatHistoryForApi = async (msgs: ChatMessage[]): Promise<Chat
         // Attach Thought Signatures if present (Crucial for Gemini 3 Pro)
         if (msg.role === 'model' && msg.thoughtSignatures && msg.thoughtSignatures.length > 0) {
             if (contentParts.length > 0) {
-                // Strategy: Attach the last thought signature to the last part.
-                // Since we reconstruct parts from text/files (flattened), we may not have a 1:1 mapping to original parts.
-                // However, ensuring the signature accompanies the text response typically preserves the thought context.
                 const lastPart = contentParts[contentParts.length - 1];
                 lastPart.thoughtSignature = msg.thoughtSignatures[msg.thoughtSignatures.length - 1];
             }
@@ -271,4 +320,55 @@ export const sortModels = (models: ModelOption[]): ModelOption[] => {
 
         return a.name.localeCompare(b.name);
     });
+};
+
+export const getDefaultModelOptions = (): ModelOption[] => {
+    const pinnedInternalModels: ModelOption[] = TAB_CYCLE_MODELS.map(id => {
+        let name;
+        if (id.toLowerCase().includes('gemma')) {
+             name = id.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        } else {
+             name = id.includes('/') 
+                ? `Gemini ${id.split('/')[1]}`.replace('gemini-','').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                : `Gemini ${id.replace('gemini-','').replace(/-/g, ' ')}`.replace(/\b\w/g, l => l.toUpperCase());
+        }
+        return { id, name, isPinned: true };
+    });
+    return sortModels([...pinnedInternalModels, ...STATIC_TTS_MODELS, ...STATIC_IMAGEN_MODELS]);
+};
+
+// --- Helper for Model Capabilities ---
+export const isGemini3Model = (modelId: string): boolean => {
+    if (!modelId) return false;
+    const lowerId = modelId.toLowerCase();
+    return GEMINI_3_RO_MODELS.some(m => lowerId.includes(m)) || lowerId.includes('gemini-3-pro');
+};
+
+// --- Model Settings Cache ---
+const MODEL_SETTINGS_CACHE_KEY = 'model_settings_cache';
+
+export interface CachedModelSettings {
+    mediaResolution?: MediaResolution;
+    thinkingBudget?: number;
+    thinkingLevel?: 'LOW' | 'HIGH';
+}
+
+export const getCachedModelSettings = (modelId: string): CachedModelSettings | undefined => {
+    try {
+        const cache = JSON.parse(localStorage.getItem(MODEL_SETTINGS_CACHE_KEY) || '{}');
+        return cache[modelId];
+    } catch {
+        return undefined;
+    }
+};
+
+export const cacheModelSettings = (modelId: string, settings: CachedModelSettings) => {
+    if (!modelId) return;
+    try {
+        const cache = JSON.parse(localStorage.getItem(MODEL_SETTINGS_CACHE_KEY) || '{}');
+        cache[modelId] = { ...cache[modelId], ...settings };
+        localStorage.setItem(MODEL_SETTINGS_CACHE_KEY, JSON.stringify(cache));
+    } catch (e) {
+        console.error("Failed to cache model settings", e);
+    }
 };

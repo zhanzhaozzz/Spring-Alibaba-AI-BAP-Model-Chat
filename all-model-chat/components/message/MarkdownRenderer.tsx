@@ -12,7 +12,8 @@ import { CodeBlock } from './CodeBlock';
 import { MermaidBlock } from './MermaidBlock';
 import { GraphvizBlock } from './GraphvizBlock';
 import { TableBlock } from './TableBlock';
-import { UploadedFile } from '../../types';
+import { ToolResultBlock } from './ToolResultBlock';
+import { UploadedFile, SideViewContent } from '../../types';
 import { translations } from '../../utils/appUtils';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { extractTextFromNode } from '../../utils/uiUtils';
@@ -28,6 +29,7 @@ interface MarkdownRendererProps {
   allowHtml?: boolean;
   t: (key: keyof typeof translations) => string;
   themeId: string;
+  onOpenSidePanel: (content: SideViewContent) => void;
 }
 
 const InlineCode = ({ className, children, inline, ...props }: any) => {
@@ -68,6 +70,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
   allowHtml = false,
   t,
   themeId,
+  onOpenSidePanel,
 }) => {
 
   const rehypePlugins = useMemo(() => {
@@ -121,6 +124,13 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
         return <InlineCode {...props} />;
     },
     table: (props: any) => <TableBlock {...props} />,
+    div: (props: any) => {
+      const { className, children, ...rest } = props;
+      if (className?.includes('tool-result')) {
+        return <ToolResultBlock className={className} {...rest}>{children}</ToolResultBlock>;
+      }
+      return <div className={className} {...rest}>{children}</div>;
+    },
     pre: (props: any) => {
       const { node, children, ...rest } = props;
       
@@ -134,8 +144,9 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
         }
       ) as React.ReactElement | undefined;
 
-      const codeClassName = codeElement?.props?.className || '';
-      const codeContent = codeElement?.props?.children;
+      // Safe property access with optional chaining and type casting
+      const codeClassName = (codeElement?.props as any)?.className || '';
+      const codeContent = (codeElement?.props as any)?.children;
       
       // Extract text reliably from potential React Element tree (from highlighting)
       const rawCode = extractTextFromNode(codeContent);
@@ -147,7 +158,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
       if (isMermaidRenderingEnabled && language === 'mermaid' && typeof rawCode === 'string') {
         return (
           <div>
-            <MermaidBlock code={rawCode} onImageClick={onImageClick} isLoading={isLoading} themeId={themeId} />
+            <MermaidBlock code={rawCode} onImageClick={onImageClick} isLoading={isLoading} themeId={themeId} onOpenSidePanel={onOpenSidePanel} />
           </div>
         );
       }
@@ -155,7 +166,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
       if (isGraphvizRenderingEnabled && isGraphviz && typeof rawCode === 'string') {
         return (
           <div>
-            <GraphvizBlock code={rawCode} onImageClick={onImageClick} isLoading={isLoading} themeId={themeId} />
+            <GraphvizBlock code={rawCode} onImageClick={onImageClick} isLoading={isLoading} themeId={themeId} onOpenSidePanel={onOpenSidePanel} />
           </div>
         );
       }
@@ -167,21 +178,31 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({
           onOpenHtmlPreview={onOpenHtmlPreview} 
           expandCodeBlocksByDefault={expandCodeBlocksByDefault}
           t={t}
+          onOpenSidePanel={onOpenSidePanel}
         >
           {codeElement || children}
         </CodeBlock>
       );
     }
-  }), [onOpenHtmlPreview, expandCodeBlocksByDefault, onImageClick, isMermaidRenderingEnabled, isGraphvizRenderingEnabled, isLoading, t, themeId]);
+  }), [onOpenHtmlPreview, expandCodeBlocksByDefault, onImageClick, isMermaidRenderingEnabled, isGraphvizRenderingEnabled, isLoading, t, themeId, onOpenSidePanel]);
 
   const processedContent = useMemo(() => {
     if (!content) return '';
+    // Split by code blocks to avoid replacing content inside them
     const parts = content.split(/(```[\s\S]*?```)/g);
     return parts.map(part => {
       if (part.startsWith('```')) {
         return part;
       }
-      return part.replace(/((:|：)\*\*)(\S)/g, '$1 $3');
+      let processedPart = part.replace(/((:|：)\*\*)(\S)/g, '$1 $3');
+      
+      // Replace \[ ... \] with $$ ... $$
+      processedPart = processedPart.replace(/\\\[([\s\S]*?)\\\]/g, '$$$$$1$$$$');
+      
+      // Replace \( ... \) with $ ... $
+      processedPart = processedPart.replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
+      
+      return processedPart;
     }).join('');
   }, [content]);
 

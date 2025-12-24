@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { UploadedFile } from '../../types';
-import { Ban, X, AlertTriangleIcon, Loader2, CheckCircle, Copy, Check, FileVideo, FileAudio, FileText, ImageIcon, Youtube, FileCode2, Scissors } from 'lucide-react';
-import { getFileTypeCategory, FileCategory } from '../../utils/uiUtils';
+import { Ban, X, Loader2, CheckCircle, Copy, Check, Scissors, SlidersHorizontal, Settings2 } from 'lucide-react';
+import { getFileTypeCategory, CATEGORY_STYLES, getResolutionColor } from '../../utils/uiUtils';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { SUPPORTED_IMAGE_MIME_TYPES } from '../../constants/fileConstants';
 import { formatFileSize } from '../../utils/domainUtils';
@@ -13,19 +13,10 @@ interface SelectedFileDisplayProps {
   onCancelUpload: (fileId: string) => void;
   onConfigure?: (file: UploadedFile) => void;
   onPreview?: (file: UploadedFile) => void;
+  isGemini3?: boolean;
 }
 
-const CATEGORY_STYLES: Record<FileCategory, { Icon: React.ElementType, colorClass: string, bgClass: string }> = {
-    image: { Icon: ImageIcon, colorClass: "text-blue-500 dark:text-blue-400", bgClass: "bg-blue-500/10 dark:bg-blue-400/10" },
-    audio: { Icon: FileAudio, colorClass: "text-purple-500 dark:text-purple-400", bgClass: "bg-purple-500/10 dark:bg-purple-400/10" },
-    video: { Icon: FileVideo, colorClass: "text-pink-500 dark:text-pink-400", bgClass: "bg-pink-500/10 dark:bg-pink-400/10" },
-    youtube: { Icon: Youtube, colorClass: "text-red-600 dark:text-red-500", bgClass: "bg-red-600/10 dark:bg-red-500/10" },
-    pdf: { Icon: FileText, colorClass: "text-orange-500 dark:text-orange-400", bgClass: "bg-orange-500/10 dark:bg-orange-400/10" },
-    code: { Icon: FileCode2, colorClass: "text-emerald-500 dark:text-emerald-400", bgClass: "bg-emerald-500/10 dark:bg-emerald-400/10" },
-    error: { Icon: AlertTriangleIcon, colorClass: "text-[var(--theme-text-danger)]", bgClass: "bg-[var(--theme-bg-danger)]/10" },
-};
-
-export const SelectedFileDisplay: React.FC<SelectedFileDisplayProps> = ({ file, onRemove, onCancelUpload, onConfigure, onPreview }) => {
+export const SelectedFileDisplay: React.FC<SelectedFileDisplayProps> = ({ file, onRemove, onCancelUpload, onConfigure, onPreview, isGemini3 }) => {
   const [isNewlyActive, setIsNewlyActive] = useState(false);
   const prevUploadState = useRef(file.uploadState);
   const { isCopied: idCopied, copyToClipboard } = useCopyToClipboard();
@@ -54,10 +45,24 @@ export const SelectedFileDisplay: React.FC<SelectedFileDisplayProps> = ({ file, 
   const isCancellable = isUploading || (isProcessing && file.uploadState !== 'processing_api');
   
   const category = getFileTypeCategory(file.type, file.error);
-  const { Icon, colorClass, bgClass } = CATEGORY_STYLES[category];
+  const { Icon, colorClass, bgClass } = CATEGORY_STYLES[category] || CATEGORY_STYLES['code'];
+  
   const isVideo = category === 'video' || category === 'youtube';
+  const isImage = category === 'image';
+  const isPdf = category === 'pdf';
+  
+  // Determine if this file supports configuration (Video Clipping OR Gemini 3 Resolution)
+  const canConfigure = onConfigure && isActive && !file.error && (
+      isVideo || (isGemini3 && (isImage || isPdf))
+  );
 
   const progress = file.progress ?? 0;
+  const ErrorIcon = CATEGORY_STYLES['error'].Icon;
+
+  // Icon Selection Logic:
+  // If it's Gemini 3, we support resolution settings (and maybe clipping). Use Settings/Sliders icon.
+  // If it's NOT Gemini 3 but is Video, we only support clipping. Use Scissors.
+  const ConfigIcon = (isGemini3) ? SlidersHorizontal : (isVideo ? Scissors : Settings2);
 
   return (
     <div className={`group relative flex flex-col w-24 flex-shrink-0 ${isNewlyActive ? 'newly-active-file-animate' : ''} select-none`}>
@@ -118,7 +123,7 @@ export const SelectedFileDisplay: React.FC<SelectedFileDisplayProps> = ({ file, 
 
         {isFailed && !isCancelled && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-[var(--theme-bg-danger)]/10 backdrop-blur-[1px] z-20">
-                <AlertTriangleIcon size={20} className="text-[var(--theme-text-danger)] mb-1" />
+                <ErrorIcon size={20} className="text-[var(--theme-text-danger)] mb-1" />
             </div>
         )}
 
@@ -128,14 +133,14 @@ export const SelectedFileDisplay: React.FC<SelectedFileDisplayProps> = ({ file, 
              </div>
         )}
 
-        {isActive && isVideo && onConfigure && !file.error && (
+        {canConfigure && (
              <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onConfigure(file); }}
-                title="Configure Video"
-                className="absolute bottom-1 left-1 p-1.5 rounded-md bg-black/50 backdrop-blur-md text-white/80 hover:text-white hover:bg-black/70 transition-all z-20"
+                onClick={(e) => { e.stopPropagation(); onConfigure && onConfigure(file); }}
+                title="Configure File"
+                className={`absolute bottom-1 left-1 p-1.5 rounded-md bg-black/50 backdrop-blur-md hover:bg-black/70 transition-all z-20 ${getResolutionColor(file.mediaResolution)}`}
              >
-                <Scissors size={12} strokeWidth={2} />
+                <ConfigIcon size={12} strokeWidth={2} />
              </button>
         )}
 
@@ -160,6 +165,7 @@ export const SelectedFileDisplay: React.FC<SelectedFileDisplayProps> = ({ file, 
             title={isFailed ? file.error : undefined}
         >
             {file.videoMetadata ? <Scissors size={8} className="text-[var(--theme-text-link)]" /> : null}
+            {file.mediaResolution && <SlidersHorizontal size={8} className="text-[var(--theme-text-link)]" />}
             {isFailed ? (file.error || 'Error') : 
              isUploading ? 'Uploading...' :
              isProcessing ? 'Processing...' :

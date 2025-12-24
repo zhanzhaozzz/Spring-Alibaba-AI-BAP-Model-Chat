@@ -1,24 +1,20 @@
-
 import React, { useMemo } from 'react';
 import { Zap } from 'lucide-react';
 import { ModelOption } from '../../types';
 import { GoogleSpinner } from '../icons/GoogleSpinner';
 import { ModelPicker } from '../shared/ModelPicker';
-import { GEMINI_3_RO_MODELS } from '../../constants/appConstants';
+import { isGemini3Model } from '../../utils/appUtils';
 
 interface HeaderModelSelectorProps {
   currentModelName?: string;
   availableModels: ModelOption[];
   selectedModelId: string;
   onSelectModel: (modelId: string) => void;
-  isModelsLoading: boolean;
   isSwitchingModel: boolean;
   isLoading: boolean;
   t: (key: string) => string;
-  defaultModelId: string;
-  onSetDefaultModel: (modelId: string) => void;
-  thinkingLevel?: 'LOW' | 'HIGH';
-  onSetThinkingLevel: (level: 'LOW' | 'HIGH') => void;
+  thinkingLevel?: 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
+  onSetThinkingLevel: (level: 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH') => void;
 }
 
 export const HeaderModelSelector: React.FC<HeaderModelSelectorProps> = ({
@@ -26,16 +22,13 @@ export const HeaderModelSelector: React.FC<HeaderModelSelectorProps> = ({
   availableModels,
   selectedModelId,
   onSelectModel,
-  isModelsLoading,
   isSwitchingModel,
   isLoading,
   t,
-  defaultModelId,
-  onSetDefaultModel,
   thinkingLevel,
   onSetThinkingLevel,
 }) => {
-  const displayModelName = isModelsLoading && !currentModelName ? t('loading') : currentModelName;
+  const displayModelName = currentModelName;
 
   const abbreviatedModelName = useMemo(() => {
     if (!displayModelName) return '';
@@ -49,10 +42,10 @@ export const HeaderModelSelector: React.FC<HeaderModelSelectorProps> = ({
     return name;
   }, [displayModelName, t]);
 
-  const isSelectorDisabled = (isModelsLoading && availableModels.length === 0) || isLoading || isSwitchingModel;
+  const isSelectorDisabled = availableModels.length === 0 || isLoading || isSwitchingModel;
   
-  // Check for Gemini 3 models (ignoring case)
-  const isGemini3 = GEMINI_3_RO_MODELS.some(id => id.toLowerCase() === selectedModelId.toLowerCase()) || selectedModelId.toLowerCase().includes('gemini-3-pro');
+  // Check for Gemini 3 models (ignoring case) but exclude image models
+  const isGemini3 = isGemini3Model(selectedModelId) && !selectedModelId.toLowerCase().includes('image');
   const isLowThinking = thinkingLevel === 'LOW';
 
   return (
@@ -60,10 +53,7 @@ export const HeaderModelSelector: React.FC<HeaderModelSelectorProps> = ({
       models={availableModels}
       selectedId={selectedModelId}
       onSelect={onSelectModel}
-      isLoading={isModelsLoading}
       t={t}
-      defaultModelId={defaultModelId}
-      onSetDefaultModel={onSetDefaultModel}
       dropdownClassName="w-[calc(100vw-2rem)] max-w-[240px] sm:w-[240px] sm:max-w-none max-h-96"
       renderTrigger={({ isOpen, setIsOpen }) => (
         <div className="relative flex items-center gap-1">
@@ -76,7 +66,7 @@ export const HeaderModelSelector: React.FC<HeaderModelSelectorProps> = ({
                 aria-haspopup="listbox"
                 aria-expanded={isOpen}
             >
-                {isModelsLoading && !currentModelName && <div className="flex items-center justify-center"><GoogleSpinner size={16} /></div>}
+                {!currentModelName && <div className="flex items-center justify-center"><GoogleSpinner size={16} /></div>}
                 
                 <span className="truncate max-w-[200px] sm:max-w-[240px]">{abbreviatedModelName}</span>
             </button>
@@ -88,12 +78,12 @@ export const HeaderModelSelector: React.FC<HeaderModelSelectorProps> = ({
                         e.stopPropagation(); 
                         onSetThinkingLevel(isLowThinking ? 'HIGH' : 'LOW'); 
                     }}
-                    className={`h-10 w-10 flex items-center justify-center rounded-xl transition-all duration-200 ease-out focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--theme-bg-primary)] focus-visible:ring-[var(--theme-border-focus)] hover:scale-105 active:scale-95 ${
+                    className={`h-10 w-10 flex items-center justify-center rounded-xl transition-all duration-200 ease-out focus:outline-none focus:visible:ring-2 focus:visible:ring-offset-2 focus:visible:ring-offset-[var(--theme-bg-primary)] focus-visible:ring-[var(--theme-border-focus)] hover:scale-105 active:scale-95 ${
                         isLowThinking 
                             ? 'text-yellow-500 hover:bg-[var(--theme-bg-tertiary)]' 
                             : 'text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-primary)] hover:bg-[var(--theme-bg-tertiary)]'
                     }`}
-                    title={isLowThinking ? "Thinking: Low (Fast)" : "Thinking: High (Deep)"}
+                    title={isLowThinking ? "Thinking: Low (Flash Mode)" : "Thinking: High (Pro Mode)"}
                     aria-label="Toggle thinking level"
                 >
                     <Zap size={18} fill={isLowThinking ? "currentColor" : "none"} strokeWidth={2} />

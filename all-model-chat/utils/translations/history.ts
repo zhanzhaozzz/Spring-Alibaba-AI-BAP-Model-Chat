@@ -1,14 +1,16 @@
+
 export const historyTranslations = {
     // HistorySidebar.tsx
     history_title: { en: 'History', zh: '历史记录' },
     history_recent_chats: { en: 'Recent Chats', zh: '近期对话' },
     history_empty: { en: 'No chat history yet.', zh: '暂无聊天记录。' },
     history_search_placeholder: { en: 'Search history...', zh: '搜索历史...' },
-    history_search_button: { en: 'Search', zh: '搜索' },
+    history_search_button: { en: 'Search', zh: '搜索聊天' },
     history_search_aria: { en: 'Search chat history', zh: '搜索聊天记录' },
     history_search_clear_aria: { en: 'Clear search', zh: '清除搜索' },
     history_pin: { en: 'Pin', zh: '置顶' },
     history_unpin: { en: 'Unpin', zh: '取消置顶' },
+    history_duplicate: { en: 'Duplicate', zh: '创建副本' },
     generatingTitle: { en: 'Generating title...', zh: '生成标题中...' },
     newGroup_title: { en: 'Untitled', zh: '无标题' },
     export_chat: { en: 'Export Chat', zh: '导出对话' },

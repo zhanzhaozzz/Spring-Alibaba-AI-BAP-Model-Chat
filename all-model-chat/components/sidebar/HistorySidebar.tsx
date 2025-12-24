@@ -9,6 +9,7 @@ import { GroupItem } from './GroupItem';
 import { Search, Settings } from 'lucide-react';
 import { IconNewChat, IconSidebarToggle } from '../icons/CustomIcons';
 import { useWindowContext } from '../../contexts/WindowContext';
+import { useIsMobile } from '../../hooks/useDevice';
 
 export interface HistorySidebarProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ export interface HistorySidebarProps {
   onDeleteSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string, newTitle: string) => void;
   onTogglePinSession: (sessionId: string) => void;
+  onDuplicateSession: (sessionId: string) => void;
   onOpenExportModal: () => void;
   onAddNewGroup: () => void;
   onDeleteGroup: (groupId: string) => void;
@@ -43,7 +45,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = (props) => {
     generatingTitleSessionIds, onSelectSession, onOpenExportModal, onAddNewGroup,
     onDeleteGroup, onRenameGroup, onMoveSessionToGroup, onToggleGroupExpansion,
     themeId, t, language, onNewChat, onDeleteSession, onRenameSession, onTogglePinSession,
-    onOpenSettingsModal, onOpenScenariosModal
+    onDuplicateSession, onOpenSettingsModal, onOpenScenariosModal
   } = props;
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,6 +59,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = (props) => {
   const prevGeneratingTitleSessionIdsRef = useRef<Set<string>>(new Set());
   
   const { document: targetDocument } = useWindowContext();
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -103,7 +106,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = (props) => {
   const handleRenameCancel = () => { setEditingItem(null); };
 
   const handleRenameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') handleRenameConfirm();
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleRenameConfirm();
     else if (e.key === 'Escape') handleRenameCancel();
   };
 
@@ -225,6 +228,14 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = (props) => {
       }
   };
 
+  const handleSessionSelect = (sessionId: string) => {
+      onSelectSession(sessionId);
+      // Auto-close sidebar on mobile
+      if (window.innerWidth < 768) {
+          onToggle();
+      }
+  };
+
   const ungroupedSessions = sessionsByGroupId.get(null) || [];
   const pinnedUngrouped = ungroupedSessions.filter(s => s.isPinned);
   const { categories, categoryOrder } = categorizedUngroupedSessions;
@@ -232,7 +243,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = (props) => {
   const sessionItemSharedProps = {
     activeSessionId, editingItem, activeMenu, loadingSessionIds,
     generatingTitleSessionIds, newlyTitledSessionId, editInputRef, menuRef,
-    onSelectSession, onTogglePinSession, onDeleteSession, onOpenExportModal,
+    onSelectSession: handleSessionSelect, onTogglePinSession, onDeleteSession, onDuplicateSession, onOpenExportModal,
     handleStartEdit: (item: SavedChatSession) => handleStartEdit('session', item),
     handleRenameConfirm, handleRenameKeyDown, setEditingItem, toggleMenu, setActiveMenu, handleDragStart, t
   };
@@ -243,7 +254,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = (props) => {
             e.stopPropagation();
             onClick();
           }}
-          className="p-2.5 rounded-xl text-[var(--theme-icon-history)] hover:bg-[var(--theme-bg-tertiary)] hover:text-[var(--theme-text-primary)] transition-colors focus:outline-none focus:visible:ring-2 focus-visible:ring-[var(--theme-border-focus)]"
+          className="p-2.5 rounded-xl text-[var(--theme-icon-history)] hover:bg-[var(--theme-bg-tertiary)] hover:text-[var(--theme-text-primary)] transition-colors focus:outline-none focus:visible:ring-2 focus:visible:ring-[var(--theme-border-focus)]"
           title={title}
           aria-label={title}
       >
@@ -327,12 +338,12 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = (props) => {
                 )}
             </div>
             
-            <div className="p-2 flex justify-between items-center">
+            <div className="p-3 bg-[var(--theme-bg-secondary)]/30">
                  <button
                     onClick={onOpenSettingsModal}
-                    className="p-2 text-[var(--theme-icon-settings)] hover:bg-[var(--theme-bg-tertiary)] hover:text-[var(--theme-text-primary)] rounded-lg transition-colors flex items-center gap-2 text-sm flex-grow"
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)] hover:bg-[var(--theme-bg-tertiary)] rounded-xl transition-all duration-200 group"
                  >
-                    <Settings size={18} strokeWidth={2} />
+                    <Settings size={20} strokeWidth={2} className="text-[var(--theme-icon-settings)] group-hover:text-[var(--theme-text-primary)] transition-colors" />
                     <span>{t('settingsTitle')}</span>
                  </button>
             </div>

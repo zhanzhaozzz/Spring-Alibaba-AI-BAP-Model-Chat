@@ -16,15 +16,12 @@ interface HeaderProps {
   availableModels: ModelOption[];
   selectedModelId: string;
   onSelectModel: (modelId: string) => void;
-  isModelsLoading: boolean; 
   isSwitchingModel: boolean;
   isHistorySidebarOpen: boolean;
   onLoadCanvasPrompt: () => void;
   isCanvasPromptActive: boolean;
   t: (key: keyof typeof translations) => string;
   isKeyLocked: boolean;
-  defaultModelId: string;
-  onSetDefaultModel: (modelId: string) => void;
   isPipSupported: boolean;
   isPipActive: boolean;
   onTogglePip: () => void;
@@ -43,15 +40,12 @@ export const Header: React.FC<HeaderProps> = ({
   availableModels,
   selectedModelId,
   onSelectModel,
-  isModelsLoading,
   isSwitchingModel,
   isHistorySidebarOpen,
   onLoadCanvasPrompt,
   isCanvasPromptActive,
   t,
   isKeyLocked,
-  defaultModelId,
-  onSetDefaultModel,
   isPipSupported,
   isPipActive,
   onTogglePip,
@@ -102,12 +96,9 @@ export const Header: React.FC<HeaderProps> = ({
             availableModels={availableModels}
             selectedModelId={selectedModelId}
             onSelectModel={onSelectModel}
-            isModelsLoading={isModelsLoading}
             isSwitchingModel={isSwitchingModel}
             isLoading={isLoading}
             t={t}
-            defaultModelId={defaultModelId}
-            onSetDefaultModel={onSetDefaultModel}
             thinkingLevel={thinkingLevel}
             onSetThinkingLevel={onSetThinkingLevel}
         />

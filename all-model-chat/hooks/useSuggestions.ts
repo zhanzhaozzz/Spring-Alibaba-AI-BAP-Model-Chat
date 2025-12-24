@@ -1,6 +1,5 @@
-
 // hooks/useSuggestions.ts
-import { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { AppSettings, SavedChatSession, ChatSettings as IndividualChatSettings } from '../types';
 import { getKeyForRequest, logService } from '../utils/appUtils';
 import { geminiServiceInstance } from '../services/geminiService';
@@ -13,6 +12,7 @@ interface SuggestionsProps {
     isLoading: boolean;
     updateAndPersistSessions: SessionsUpdater;
     language: 'en' | 'zh';
+    sessionKeyMapRef?: React.MutableRefObject<Map<string, string>>;
 }
 
 export const useSuggestions = ({
@@ -21,6 +21,7 @@ export const useSuggestions = ({
     isLoading,
     updateAndPersistSessions,
     language,
+    sessionKeyMapRef,
 }: SuggestionsProps) => {
     const prevIsLoadingRef = useRef(isLoading);
 
@@ -30,19 +31,28 @@ export const useSuggestions = ({
             ...s, messages: s.messages.map(m => m.id === messageId ? {...m, isGeneratingSuggestions: true} : m)
         } : s));
 
-        // Use skipIncrement: true to avoid rotating API keys for background suggestions
-        const keyResult = getKeyForRequest(appSettings, sessionSettings, { skipIncrement: true });
-        if ('error' in keyResult) {
-            logService.error('Cannot generate suggestions: API key not configured.');
-            // Hide loading state on error
-            updateAndPersistSessions(prev => prev.map(s => s.id === sessionId ? {
-                ...s, messages: s.messages.map(m => m.id === messageId ? {...m, isGeneratingSuggestions: false} : m)
-            } : s));
-            return;
+        // Sticky Key Logic: Prefer key used in the last turn
+        const stickyKey = sessionKeyMapRef?.current?.get(sessionId);
+        let keyToUse: string;
+
+        if (stickyKey) {
+            keyToUse = stickyKey;
+        } else {
+            // Use skipIncrement: true to avoid rotating API keys for background suggestions
+            const keyResult = getKeyForRequest(appSettings, sessionSettings, { skipIncrement: true });
+            if ('error' in keyResult) {
+                logService.error('Cannot generate suggestions: API key not configured.');
+                // Hide loading state on error
+                updateAndPersistSessions(prev => prev.map(s => s.id === sessionId ? {
+                    ...s, messages: s.messages.map(m => m.id === messageId ? {...m, isGeneratingSuggestions: false} : m)
+                } : s));
+                return;
+            }
+            keyToUse = keyResult.key;
         }
 
         try {
-            const suggestions = await geminiServiceInstance.generateSuggestions(keyResult.key, userContent, modelContent, language);
+            const suggestions = await geminiServiceInstance.generateSuggestions(keyToUse, userContent, modelContent, language);
             if (suggestions && suggestions.length > 0) {
                 updateAndPersistSessions(prev => prev.map(s => s.id === sessionId ? {
                     ...s, messages: s.messages.map(m => m.id === messageId ? {...m, suggestions, isGeneratingSuggestions: false} : m)
@@ -60,7 +70,7 @@ export const useSuggestions = ({
                 ...s, messages: s.messages.map(m => m.id === messageId ? {...m, isGeneratingSuggestions: false} : m)
             } : s));
         }
-    }, [appSettings, language, updateAndPersistSessions]);
+    }, [appSettings, language, updateAndPersistSessions, sessionKeyMapRef]);
 
     useEffect(() => {
         // Trigger condition: loading just finished for the active chat

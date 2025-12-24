@@ -1,5 +1,5 @@
+
 import React from 'react';
-import { CameraCapture } from '../CameraCapture';
 import { AudioRecorder } from '../AudioRecorder';
 import { CreateTextFileEditor } from '../CreateTextFileEditor';
 import { HelpModal } from './HelpModal';
@@ -7,9 +7,6 @@ import { translations } from '../../../utils/appUtils';
 import { CommandInfo } from '../../../types';
 
 export interface ChatInputModalsProps {
-  showCamera: boolean;
-  onPhotoCapture: (file: File) => void;
-  onCameraCancel: () => void;
   showRecorder: boolean;
   onAudioRecord: (file: File) => Promise<void>;
   onRecorderCancel: () => void;
@@ -22,13 +19,9 @@ export interface ChatInputModalsProps {
   isProcessingFile: boolean;
   isLoading: boolean;
   t: (key: keyof typeof translations) => string;
-  isHistorySidebarOpen?: boolean;
 }
 
 export const ChatInputModals: React.FC<ChatInputModalsProps> = ({
-  showCamera,
-  onPhotoCapture,
-  onCameraCancel,
   showRecorder,
   onAudioRecord,
   onRecorderCancel,
@@ -41,15 +34,13 @@ export const ChatInputModals: React.FC<ChatInputModalsProps> = ({
   isProcessingFile,
   isLoading,
   t,
-  isHistorySidebarOpen,
 }) => {
-  if (!showCamera && !showRecorder && !showCreateTextFileEditor && !isHelpModalOpen) {
+  if (!showRecorder && !showCreateTextFileEditor && !isHelpModalOpen) {
     return null;
   }
 
   return (
     <>
-      {showCamera && <CameraCapture onCapture={onPhotoCapture} onCancel={onCameraCancel} />}
       {showRecorder && <AudioRecorder onRecord={onAudioRecord} onCancel={onRecorderCancel} />}
       {showCreateTextFileEditor && <CreateTextFileEditor onConfirm={onConfirmCreateTextFile} onCancel={onCreateTextFileCancel} isProcessing={isProcessingFile} isLoading={isLoading} t={t as (key: string) => string} />}
       {isHelpModalOpen && <HelpModal isOpen={isHelpModalOpen} onClose={onHelpModalClose} commands={allCommandsForHelp} t={t} />}

@@ -1,29 +1,22 @@
 
 import React, { useState } from 'react';
 import { UploadedFile } from '../../types';
-import { FileText, ImageIcon, AlertCircle, FileCode2, FileVideo, FileAudio, Check, Copy, Download, Youtube } from 'lucide-react'; 
+import { Check, Copy, Download, SlidersHorizontal, Scissors, Settings2 } from 'lucide-react'; 
 import { triggerDownload } from '../../utils/exportUtils';
-import { getFileTypeCategory, FileCategory } from '../../utils/uiUtils';
+import { getFileTypeCategory, CATEGORY_STYLES, getResolutionColor } from '../../utils/uiUtils';
 import { formatFileSize } from '../../utils/domainUtils';
+import { SUPPORTED_IMAGE_MIME_TYPES } from '../../constants/fileConstants';
 
 interface FileDisplayProps {
   file: UploadedFile;
   onFileClick?: (file: UploadedFile) => void;
   isFromMessageList?: boolean;
   isGridView?: boolean;
+  onConfigure?: () => void;
+  isGemini3?: boolean;
 }
 
-const CATEGORY_STYLES: Record<FileCategory, { Icon: React.ElementType, colorClass: string, bgClass: string }> = {
-    image: { Icon: ImageIcon, colorClass: "text-blue-500 dark:text-blue-400", bgClass: "bg-blue-500/10 dark:bg-blue-400/10" },
-    audio: { Icon: FileAudio, colorClass: "text-purple-500 dark:text-purple-400", bgClass: "bg-purple-500/10 dark:bg-purple-400/10" },
-    video: { Icon: FileVideo, colorClass: "text-pink-500 dark:text-pink-400", bgClass: "bg-pink-500/10 dark:bg-pink-400/10" },
-    youtube: { Icon: Youtube, colorClass: "text-red-600 dark:text-red-500", bgClass: "bg-red-600/10 dark:bg-red-500/10" },
-    pdf: { Icon: FileText, colorClass: "text-orange-500 dark:text-orange-400", bgClass: "bg-orange-500/10 dark:bg-orange-400/10" },
-    code: { Icon: FileCode2, colorClass: "text-emerald-500 dark:text-emerald-400", bgClass: "bg-emerald-500/10 dark:bg-emerald-400/10" },
-    error: { Icon: AlertCircle, colorClass: "text-[var(--theme-text-danger)]", bgClass: "bg-[var(--theme-bg-danger)]/10" },
-};
-
-export const FileDisplay: React.FC<FileDisplayProps> = ({ file, onFileClick, isFromMessageList, isGridView }) => {
+export const FileDisplay: React.FC<FileDisplayProps> = ({ file, onFileClick, isFromMessageList, isGridView, onConfigure, isGemini3 }) => {
   const [idCopied, setIdCopied] = useState(false);
 
   const isClickable = file.uploadState === 'active' && !file.error && onFileClick && file.dataUrl;
@@ -55,19 +48,46 @@ export const FileDisplay: React.FC<FileDisplayProps> = ({ file, onFileClick, isF
       }
   };
 
+  const isVideo = category === 'video' || category === 'youtube';
+  const isImage = category === 'image';
+  const isPdf = category === 'pdf';
+
+  // Configuration check logic matches SelectedFileDisplay
+  const canConfigure = onConfigure && !file.error && (
+      isVideo || (isGemini3 && (isImage || isPdf))
+  );
+
+  const ConfigIcon = (isGemini3) ? SlidersHorizontal : (isVideo ? Scissors : Settings2);
+
   // Render Image Content specifically
   if (category === 'image' && file.dataUrl && !file.error) {
       return (
-        <div className={`relative group rounded-xl overflow-hidden border border-[var(--theme-border-secondary)] bg-[var(--theme-bg-primary)] shadow-sm transition-all hover:shadow-md ${isGridView ? '' : 'w-fit max-w-full sm:max-w-md'}`}>
+        <div className={`relative group rounded-xl overflow-hidden border border-[var(--theme-border-secondary)] bg-[var(--theme-bg-primary)] shadow-sm transition-all hover:shadow-md ${isGridView ? '' : 'w-fit max-w-full sm:max-w-sm'}`}>
             <img 
                 src={file.dataUrl} 
                 alt={file.name} 
-                className={`block ${isGridView ? 'w-full h-full object-cover aspect-square' : 'w-auto h-auto max-w-full max-h-[60vh] object-contain'} ${isClickable ? 'cursor-pointer hover:opacity-95 transition-opacity' : ''}`}
+                className={`block ${isGridView ? 'w-full h-full object-cover aspect-square' : 'w-auto h-auto max-w-full max-h-80 object-contain'} ${isClickable ? 'cursor-pointer hover:opacity-95 transition-opacity' : ''}`}
                 aria-label={`Uploaded image: ${file.name}`}
                 onClick={handleClick}
             />
             {isFromMessageList && (
                 <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* Resolution / Configuration Control (Merged to prevent duplicates) */}
+                    {canConfigure ? (
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onConfigure && onConfigure(); }}
+                            title={file.mediaResolution ? `Configure (Resolution: ${file.mediaResolution})` : "Configure"}
+                            className={`p-1.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-sm transition-colors ${getResolutionColor(file.mediaResolution)}`}
+                        >
+                            <ConfigIcon size={14} strokeWidth={2} />
+                        </button>
+                    ) : file.mediaResolution ? (
+                        <div className={`p-1.5 rounded-full bg-black/50 backdrop-blur-sm ${getResolutionColor(file.mediaResolution)}`} title={`Resolution: ${file.mediaResolution}`}>
+                            <SlidersHorizontal size={14} strokeWidth={2} />
+                        </div>
+                    ) : null}
+
                     {(file.name.startsWith('generated-image-') || file.name.startsWith('edited-image-')) && (
                         <button
                             type="button"
@@ -95,7 +115,7 @@ export const FileDisplay: React.FC<FileDisplayProps> = ({ file, onFileClick, isF
   }
 
   // Render File Card for other types (or error states)
-  const { Icon, colorClass, bgClass } = CATEGORY_STYLES[category];
+  const { Icon, colorClass, bgClass } = CATEGORY_STYLES[category] || CATEGORY_STYLES['code'];
 
   return (
     <div 
@@ -118,12 +138,33 @@ export const FileDisplay: React.FC<FileDisplayProps> = ({ file, onFileClick, isF
                         <span>{formatFileSize(file.size)}</span>
                     </>
                 )}
+                {file.videoMetadata && (
+                    <span className="flex items-center gap-0.5 text-[var(--theme-text-link)]" title="Video Clipped">
+                        <Scissors size={10} />
+                    </span>
+                )}
+                {file.mediaResolution && (
+                    <span className="flex items-center gap-0.5 text-[var(--theme-text-link)]" title={`Resolution: ${file.mediaResolution}`}>
+                        <SlidersHorizontal size={10} />
+                    </span>
+                )}
                 {file.error && <span className="text-[var(--theme-text-danger)] ml-1">Error</span>}
             </div>
         </div>
 
         {/* Action Buttons for Card View */}
         <div className="flex items-center gap-1">
+            {canConfigure && (
+                <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onConfigure && onConfigure(); }}
+                    title="Configure"
+                    className="p-1.5 rounded-lg hover:bg-[var(--theme-bg-tertiary)] text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-primary)] transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                >
+                    <ConfigIcon size={16} strokeWidth={2} />
+                </button>
+            )}
+
             {isFromMessageList && !file.fileApiName && file.dataUrl && !file.error && (
                 <button
                     type="button"

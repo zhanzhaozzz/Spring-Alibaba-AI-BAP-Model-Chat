@@ -1,4 +1,6 @@
 
+
+
 export const messagesTranslations = {
     // MessageList.tsx and sub-components
     imageZoom_title: { en: 'Zoomed Image: {filename}', zh: '图片缩放: {filename}' },
@@ -52,6 +54,14 @@ export const messagesTranslations = {
     },
     suggestion_srt_short: { en: 'Generate SRT subtitles from video.', zh: '从视频生成 SRT 字幕文件。' },
 
+    // HTML Generation Translations
+    suggestion_html_title: { en: 'Smart Board', zh: '智能看板' },
+    suggestion_html_desc: { 
+        en: 'Please organize the provided information into a structured, interactive HTML page using the Canvas system (Smart Board). Ensure the design is modern, responsive, and self-contained. Keep all information, do not omit details:', 
+        zh: '请利用 Canvas 系统，将提供的信息整理成一个结构化、交互式的 HTML 页面（智能看板）。确保设计现代、响应式且自包含。请保留所有信息，不要省略任何细节：' 
+    },
+    suggestion_html_short: { en: 'Create interactive HTML board.', zh: '创建交互式 HTML 看板。' },
+
     welcome_title: { en: 'Welcome to All Model Chat', zh: '欢迎使用 All Model Chat' },
     welcome_p1: { en: 'Start a conversation by typing below. You can also attach files, load scenarios via the', zh: '在下方输入文字开始对话。您也可以附加文件，或通过' },
     welcome_p2: { en: 'Manage Scenarios', zh: '管理场景' },
@@ -66,7 +76,8 @@ export const messagesTranslations = {
     export_failed_title: { en: 'Export failed.', zh: '导出失败。' },
     tokens_unit: { en: 'tokens', zh: '个令牌' },
     thinking_text: { en: 'Thinking...', zh: '思考中...' },
-    thinking_took_time: { en: 'Thought for {seconds} seconds', zh: '已思考 {seconds} 秒' },
+    thinking_took_time: { en: 'Thought for {duration}', zh: '已思考 {duration}' },
+    metrics_ttft: { en: 'TTFT', zh: '首字' },
     cancelled_by_user: { en: '[Cancelled by user]', zh: '[用户已取消]' },
     stopped_by_user: { en: '[Stopped by user]', zh: '[用户已停止]' },
     empty_response_error: { en: 'The model did not provide a response. This might be due to safety filters or other content restrictions.', zh: '模型未提供任何回复。这可能是由于安全过滤器或其他内容限制所致。' },

@@ -1,10 +1,11 @@
 
 import React, { useState } from 'react';
-import { KeyRound, Info, Check, AlertCircle, ShieldCheck, ArrowRight, Activity, Loader2, XCircle } from 'lucide-react';
+import { KeyRound, Info, Check, AlertCircle, ShieldCheck, ArrowRight, Activity, Loader2, XCircle, Sparkles, RotateCcw } from 'lucide-react';
 import { Toggle } from '../shared/Tooltip';
 import { useResponsiveValue } from '../../hooks/useDevice';
 import { SETTINGS_INPUT_CLASS } from '../../constants/appConstants';
 import { getClient } from '../../services/api/baseApi';
+import { parseApiKeys } from '../../utils/apiUtils';
 
 interface ApiConfigSectionProps {
   useCustomApiConfig: boolean;
@@ -51,6 +52,7 @@ export const ApiConfigSection: React.FC<ApiConfigSectionProps> = ({
 
   // Calculate preview URL
   const defaultBaseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+  const defaultProxyUrl = 'https://api-proxy.de/gemini/v1beta';
   const currentBaseUrl = apiProxyUrl?.trim() || defaultBaseUrl;
   const cleanBaseUrl = currentBaseUrl.replace(/\/+$/, '');
   const previewUrl = `${cleanBaseUrl}/models/gemini-2.5-flash:generateContent`;
@@ -78,7 +80,15 @@ export const ApiConfigSection: React.FC<ApiConfigSectionProps> = ({
       }
 
       // Handle multiple keys - pick first for test
-      const firstKey = keyToTest.split('\n')[0].trim().replace(/^["']|["']$/g, '');
+      const keys = parseApiKeys(keyToTest);
+      const firstKey = keys[0];
+      
+      if (!firstKey) {
+          setTestStatus('error');
+          setTestMessage("Invalid API Key format.");
+          return;
+      }
+
       const effectiveUrl = (useCustomApiConfig && useApiProxy && apiProxyUrl) ? apiProxyUrl : null;
 
       setTestStatus('testing');
@@ -99,6 +109,29 @@ export const ApiConfigSection: React.FC<ApiConfigSectionProps> = ({
           setTestStatus('error');
           setTestMessage(error instanceof Error ? error.message : String(error));
       }
+  };
+
+  const setApiModelsUrl = (url: string) => {
+      setApiProxyUrl(url);
+      setTestStatus('idle');
+  };
+
+  const VERTEX_URL = "https://aiplatform.googleapis.com/v1";
+  const isVertexExpressActive = useApiProxy && apiProxyUrl === VERTEX_URL;
+
+  const handleSetVertexExpress = () => {
+      if (isVertexExpressActive) {
+          setUseApiProxy(false);
+          setApiModelsUrl(defaultBaseUrl);
+      } else {
+          setUseApiProxy(true);
+          setApiModelsUrl(VERTEX_URL);
+      }
+  };
+
+  const handleResetProxy = () => {
+      setApiProxyUrl(defaultProxyUrl);
+      setTestStatus('idle');
   };
 
   return (
@@ -174,9 +207,33 @@ export const ApiConfigSection: React.FC<ApiConfigSectionProps> = ({
                 {/* Proxy Settings */}
                 <div className="space-y-3 pt-2">
                     <div className="flex items-center justify-between py-2">
-                        <label htmlFor="use-api-proxy-toggle" className="text-xs font-semibold uppercase tracking-wider text-[var(--theme-text-tertiary)] cursor-pointer flex items-center gap-2">
-                            API Proxy
-                        </label>
+                        <div className="flex items-center gap-2">
+                            <label htmlFor="use-api-proxy-toggle" className="text-xs font-semibold uppercase tracking-wider text-[var(--theme-text-tertiary)] cursor-pointer">
+                                API Proxy
+                            </label>
+                            <button
+                                type="button"
+                                onClick={handleSetVertexExpress}
+                                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors border ${
+                                    isVertexExpressActive 
+                                        ? 'bg-[var(--theme-bg-accent)] text-[var(--theme-text-accent)] border-transparent' 
+                                        : 'text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-primary)] hover:bg-[var(--theme-bg-tertiary)] border-transparent hover:border-[var(--theme-border-secondary)]'
+                                }`}
+                                title={t('apiConfig_vertexExpress')}
+                            >
+                                <Sparkles size={10} strokeWidth={isVertexExpressActive ? 2 : 1.5} />
+                                <span>{t('apiConfig_vertexExpress_btn')}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleResetProxy}
+                                className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors border text-[var(--theme-text-tertiary)] hover:text-[var(--theme-text-primary)] hover:bg-[var(--theme-bg-tertiary)] border-transparent hover:border-[var(--theme-border-secondary)]"
+                                title="Reset to default"
+                            >
+                                <RotateCcw size={10} strokeWidth={1.5} />
+                                <span>Reset</span>
+                            </button>
+                        </div>
                         <Toggle
                           id="use-api-proxy-toggle"
                           checked={useApiProxy}
@@ -192,10 +249,7 @@ export const ApiConfigSection: React.FC<ApiConfigSectionProps> = ({
                             id="api-proxy-url-input"
                             type="text"
                             value={apiProxyUrl || ''}
-                            onChange={(e) => {
-                                setApiProxyUrl(e.target.value || null);
-                                setTestStatus('idle');
-                            }}
+                            onChange={(e) => setApiModelsUrl(e.target.value)}
                             className={`${inputBaseClasses} ${SETTINGS_INPUT_CLASS}`}
                             placeholder={getProxyPlaceholder()}
                             aria-label="API Proxy URL"

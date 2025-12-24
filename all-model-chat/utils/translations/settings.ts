@@ -1,4 +1,5 @@
 
+
 export const settingsTranslations = {
     // Settings Modal and subcomponents
     settingsTitle: { en: 'Settings', zh: '设置' },
@@ -43,6 +44,13 @@ export const settingsTranslations = {
     settingsThinkingLevel: { en: 'Thinking Level', zh: '等级' },
     settingsThinkingBudget_tooltip: { en: 'Set token budget for thinking. -1 for auto/unlimited, 0 to disable (like toggle off), >0 for specific token limit.', zh: '设置思考的令牌预算。-1 为自动/无限制，0 为禁用（与关闭开关效果相同），大于 0 为指定的令牌限制。' },
     settingsThinkingBudget_placeholder: { en: 'e.g., -1 for auto', zh: '例如：-1 代表自动' },
+    settingsMediaResolution: { en: 'Media Resolution', zh: '媒体分辨率' },
+    settingsMediaResolution_tooltip: { en: 'Controls the resolution of images, videos, and PDFs sent to the model. Higher resolution consumes more tokens but provides better detail.', zh: '控制发送给模型的图片、视频和PDF的分辨率。分辨率越高，消耗的令牌越多，但细节越丰富。' },
+    mediaResolution_unspecified: { en: 'Auto (Default)', zh: '自动 (默认)' },
+    mediaResolution_low: { en: 'Low (Faster)', zh: '低 (较快)' },
+    mediaResolution_medium: { en: 'Medium (Balanced)', zh: '中 (平衡)' },
+    mediaResolution_high: { en: 'High (Detail)', zh: '高 (细节)' },
+    mediaResolution_ultra_high: { en: 'Ultra High (Gemini 3 Only)', zh: '超高 (仅限 Gemini 3)' },
     settingsReset: { en: 'Reset Settings', zh: '重置设置' },
     settingsReset_confirm: { en: 'Are you sure you want to reset all settings to their default values? This does not affect chat history. Your current changes will be lost.', zh: '您确定要将所有设置重置为默认值吗？这不会影响您的聊天记录。您当前的更改将丢失。' },
     settingsClearHistory: { en: 'Clear Chat History', zh: '清空历史对话' },
@@ -65,8 +73,8 @@ export const settingsTranslations = {
     settingsExportHistory: { en: 'Export History', zh: '导出历史' },
     settingsImportScenarios: { en: 'Import Scenarios', zh: '导入场景' },
     settingsExportScenarios: { en: 'Export Scenarios', zh: '导出场景' },
-    settingsImportHistory_confirm: { en: 'The imported file contains chat history. This will OVERWRITE your current chat history and groups. Do you want to proceed?', zh: '导入的文件包含聊天记录。这将覆盖您当前的聊天记录和分组。您要继续吗？' },
-    settingsImportHistory_success: { en: 'Settings and history imported successfully! The app will now reload.', zh: '设置和历史记录导入成功！应用即将重新加载。' },
+    settingsImportHistory_confirm: { en: 'The imported chat history will be merged with your current data. Duplicate sessions (by ID) will be skipped to preserve your existing chats. Do you want to proceed?', zh: '导入的聊天记录将与当前数据合并。为保留现有数据，重复的会话（基于 ID）将被跳过。是否继续？' },
+    settingsImportHistory_success: { en: 'History merged successfully!', zh: '历史记录合并成功！' },
     settingsImport_success: { en: 'Settings imported successfully!', zh: '设置导入成功！' },
     settingsImport_error: { en: 'Failed to import settings. The file might be corrupted or in the wrong format.', zh: '导入设置失败。文件可能已损坏或格式不正确。' },
     apiConfig_default_info: { en: 'Using default API setup from environment. Enable for custom settings.', zh: '正在使用环境中的默认 API 配置。启用以进行自定义设置。' },
@@ -76,6 +84,8 @@ export const settingsTranslations = {
     apiConfig_testing: { en: 'Testing...', zh: '测试中...' },
     apiConfig_testSuccess: { en: 'Connection Successful', zh: '连接成功' },
     apiConfig_testFailed: { en: 'Connection Failed', zh: '连接失败' },
+    apiConfig_vertexExpress: { en: 'Use Vertex AI Express Endpoint', zh: '使用 Vertex AI Express 端点' },
+    apiConfig_vertexExpress_btn: { en: 'Vertex Express', zh: 'Vertex Express' },
     chatBehavior_voiceModel_label: { en: 'Voice Input Model', zh: '语音输入模型' },
     chatBehavior_voiceModel_tooltip: { en: 'Selects the model used for transcribing voice input to text.', zh: '选择用于将语音输入转录为文本的模型。' },
     chatBehavior_temp_tooltip: { en: "Controls randomness. Lower values (~0.2) make the model more deterministic and focused. Higher values (~1.0) make it more creative and diverse.", zh: "控制随机性。较低的值（~0.2）使模型更具确定性和专注性。较高的值（~1.0）使其更具创造性和多样性。" },
@@ -116,6 +126,8 @@ export const settingsTranslations = {
     settingsViewLogs_title: { en: 'Open Application Logs (Ctrl+Alt+L)', zh: '查看应用日志 (Ctrl+Alt+L)' },
     settingsClearLogs: { en: 'Clear Logs', zh: '清空日志' },
     settingsClearLogs_confirm: { en: 'Are you sure you want to clear all system logs?', zh: '您确定要清空所有系统日志吗？' },
+    settings_audioCompression_label: { en: 'Compress Audio Uploads', zh: '压缩音频上传' },
+    settings_audioCompression_tooltip: { en: 'Automatically compress audio files (including voice recordings) to MP3 64kbps to save tokens and bandwidth.', zh: '自动将音频文件（包括语音录音）压缩为 MP3 64kbps，以节省 Token 和带宽。' },
     
     // Shortcuts Section
     shortcuts_general_title: { en: 'General', zh: '通用' },
